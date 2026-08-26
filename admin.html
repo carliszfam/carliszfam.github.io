@@ -257,8 +257,10 @@ function paintCodes() {
         <div class="panel-head">
           <span class="tag tag-ink">Codes</span>
           <span class="tag">${CODES.length} printed · ${claimed} claimed</span>
-          <button class="tab no-print" id="printBtn" style="margin-left:auto">Print sheet</button>
+          <button class="tab no-print" id="wipeBtn" style="margin-left:auto">Delete unclaimed</button>
+          <button class="tab no-print" id="printBtn">Print sheet</button>
         </div>
+        <div id="codeMsg"></div>
         <div class="qr-sheet" id="qrSheet"></div>
         ${CODES.length ? "" : `<p class="empty">No codes yet.</p>`}
       </div>
@@ -266,7 +268,28 @@ function paintCodes() {
 
   $("printBtn")?.addEventListener("click", () => window.print());
   $("genGo")?.addEventListener("click", generateCodes);
+  $("wipeBtn")?.addEventListener("click", wipeUnclaimed);
   paintSheet();
+}
+
+/* Claimed codes are never touched: deleting one would orphan a garment
+   that is already sewn shut and can then never be claimed by anyone. */
+async function wipeUnclaimed() {
+  const unclaimed = CODES.filter((c) => !c.claimed_by).length;
+  if (!unclaimed) { $("codeMsg").innerHTML = `<p class="notice">Every code is claimed. Nothing to delete.</p>`; return; }
+  if (!confirm(`Delete ${unclaimed} unclaimed codes? Claimed garments are kept.`)) return;
+
+  const { error } = await sb.from("garment_codes").delete().is("claimed_by", null);
+  if (error) { $("codeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  await loadCodes();
+  $("codeMsg").innerHTML = `<p class="notice">Deleted ${unclaimed} codes.</p>`;
+}
+
+async function deleteCode(code) {
+  if (!confirm(`Delete ${code}? Only do this if the label was never printed.`)) return;
+  const { error } = await sb.from("garment_codes").delete().eq("code", code).is("claimed_by", null);
+  if (error) { $("codeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  loadCodes();
 }
 
 function paintSheet() {
@@ -287,8 +310,11 @@ function paintSheet() {
     cell.className = "qr-cell";
     cell.innerHTML = `<canvas></canvas>
       <span class="serial">${escapeHtml(c.item_number)}</span>
-      <span class="tag" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>`;
+      <span class="tag" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>
+      ${c.claimed_by ? "" : `<button class="tab no-print" data-drop="${escapeHtml(c.code)}" style="padding:2px 6px;font-size:0.62rem">Delete</button>`}`;
     sheet.appendChild(cell);
+    const drop = cell.querySelector("[data-drop]");
+    if (drop) drop.addEventListener("click", () => deleteCode(drop.dataset.drop));
     const url = `${cfg.SITE_URL}/q.html?i=${encodeURIComponent(c.item_number)}&c=${encodeURIComponent(c.code)}`;
     window.QRCode.toCanvas(cell.querySelector("canvas"), url,
       { width: 220, margin: 1, color: { dark: "#14161A", light: "#ffffff" } },
