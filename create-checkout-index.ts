@@ -117,6 +117,11 @@ Deno.serve(async (req) => {
     }
     const afterDiscount = subtotal - discountCents;
 
+    // Stripe rejects charges under roughly €0.50, so a heavy discount can
+    // leave a remainder too small to bill. Absorbing it costs at most a few
+    // cents and is better than a checkout that simply fails.
+    const STRIPE_MIN_CENTS = 50;
+
     // ---- store credit ---------------------------------------------------
     let creditApplied = 0;
     if (useCredit && userId) {
@@ -125,7 +130,12 @@ Deno.serve(async (req) => {
       const balance = (ledger ?? []).reduce((s: number, r: any) => s + r.delta_cents, 0);
       creditApplied = Math.max(0, Math.min(balance, afterDiscount));
     }
-    const total = afterDiscount - creditApplied;
+    let total = afterDiscount - creditApplied;
+    if (total > 0 && total < STRIPE_MIN_CENTS) {
+      console.log(`Absorbing ${total}c remainder, below Stripe's minimum`);
+      discountCents += total;
+      total = 0;
+    }
 
     // ---- a referral only counts if the garment has an owner -------------
     let validRef: string | null = null;
@@ -151,7 +161,7 @@ Deno.serve(async (req) => {
       unit_price_cents: l.unit, quantity: l.quantity,
     })));
 
-    // ---- credit covers everything: no card needed ------------------------
+    // ---- nothing left to charge: no card needed --------------------------
     if (total === 0) {
       const { error: sErr } = await admin.rpc("settle_order", {
         p_order_id: order.id, p_referral_cents: REFERRAL_CENTS,
