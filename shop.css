@@ -485,3 +485,12 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
 }
 .lang:hover { color: var(--ink); }
 .lang.on { background: var(--ink); color: var(--paper); }
+
+/* ---------- garments and transfer tokens ---------- */
+.garment { border-top: 1px solid var(--rule); padding: 12px 0; }
+.garment-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.token-box { border: 1px solid var(--bluing); padding: 12px; margin-top: 4px; }
+.token {
+  display: block; font-family: var(--tag-font); font-size: 1.25rem;
+  letter-spacing: 0.22em; color: var(--bluing); margin-top: 4px;
+}

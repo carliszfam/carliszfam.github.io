@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./shop.css">
-<script src="./config.js"></script>
+<link rel="stylesheet" href="./shop.css?v=8">
+<script src="./config.js?v=8"></script>
 </head>
 <body>
 
@@ -27,7 +27,7 @@
 </main>
 
 <script type="module">
-import { cfg, sb, money, escapeHtml, clearCart, currentUser, fetchBalance, t } from "./shop.js";
+import { cfg, sb, money, escapeHtml, clearCart, currentUser, fetchBalance, t } from "./shop.js?v=8";
 
 document.getElementById("brand").textContent = cfg.BRAND;
 document.querySelectorAll("[data-i]").forEach((el) => { el.textContent = t(el.dataset.i); });

@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./shop.css">
-<script src="./config.js"></script>
+<link rel="stylesheet" href="./shop.css?v=8">
+<script src="./config.js?v=8"></script>
 </head>
 <body>
 
@@ -27,7 +27,7 @@
 import {
   cfg, sb, money, escapeHtml, rememberRef, addToCart,
   currentUser, signIn, signUp, nameOf, blurbOf, t
-} from "./shop.js";
+} from "./shop.js?v=8";
 
 document.getElementById("brand").textContent = cfg.BRAND;
 document.getElementById("lblGarment").textContent = t("garment");
@@ -170,7 +170,8 @@ function viewBuy() {
         <span class="buy-price ${out ? "sold-out" : ""}">${out ? t("soldOut") : money(p.price_cents, p.currency)}</span>
         <button class="btn" id="buyGo" ${out ? "disabled" : ""}>${t("addToBag")}</button>
         <a class="btn btn-hollow" href="./index.html">${t("seeEverything")}</a>
-        <p class="tag" style="margin-top:auto">${status.mine
+        <p class="tag" style="margin-top:auto">${status.hands
+          ? `${status.hands} ${status.hands === 1 ? t("handsOne") : t("hands")} · ` : ""}${status.mine
           ? t("registeredToYou")
           : t("goesToOwner", { amount: money(50) })}</p>
       </div>

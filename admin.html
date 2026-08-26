@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./shop.css">
-<script src="./config.js"></script>
+<link rel="stylesheet" href="./shop.css?v=8">
+<script src="./config.js?v=8"></script>
 <!-- 1.4.x is the last line that ships a prebuilt browser bundle; the
      build/ folder was dropped from 1.5 onward, so newer tags 404 here. -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
@@ -43,7 +43,7 @@
 </main>
 
 <script type="module">
-import { cfg, sb, money, escapeHtml, currentUser, signIn, signOut } from "./shop.js";
+import { cfg, sb, money, escapeHtml, currentUser, signIn, signOut } from "./shop.js?v=8";
 
 document.getElementById("brand").textContent = cfg.BRAND;
 const $ = (id) => document.getElementById(id);

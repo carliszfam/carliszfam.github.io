@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { LANG, LANGS, setLang, t } from "./i18n.js";
+import { LANG, LANGS, setLang, t } from "./i18n.js?v=8";
 
 const CFG = window.SHOP_CONFIG;
 export const sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
