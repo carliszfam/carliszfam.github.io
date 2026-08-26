@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Back office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shop.css">
+<script src="./config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-in">
+    <a class="redaction" href="./index.html" id="brand"></a>
+    <span class="tag">Back office</span>
+    <nav class="masthead-nav">
+      <span class="tag" id="whoami"></span>
+      <button class="chip hide" id="outBtn">Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="shell" style="padding-top:26px;padding-bottom:60px">
+  <div id="gate"></div>
+  <div id="desk" class="hide">
+    <div class="tabs">
+      <button class="tab on" data-tab="items">Items</button>
+      <button class="tab" data-tab="codes">Garment codes</button>
+      <button class="tab" data-tab="orders">Orders</button>
+    </div>
+    <div id="tabItems"></div>
+    <div id="tabCodes" class="hide"></div>
+    <div id="tabOrders" class="hide"></div>
+  </div>
+</main>
+
+<script type="module">
+import { cfg, sb, money, escapeHtml, currentUser, signIn, signOut } from "./shop.js";
+
+document.getElementById("brand").textContent = cfg.BRAND;
+const $ = (id) => document.getElementById(id);
+const eur = (c) => (c / 100).toFixed(2);
+
+/* ================= access gate ================= */
+async function boot() {
+  const user = await currentUser();
+  if (!user) return gateSignIn();
+
+  const { data: admin } = await sb.rpc("is_admin");
+  if (!admin) {
+    $("gate").innerHTML = `<p class="notice notice-bad">This account is not an administrator.
+      Add its user id to the <span class="mini">admins</span> table in Supabase.</p>
+      <p class="mini">Your user id: ${escapeHtml(user.id)}</p>`;
+    showOut(user);
+    return;
+  }
+  $("gate").classList.add("hide");
+  $("desk").classList.remove("hide");
+  showOut(user);
+  loadItems(); loadCodes(); loadOrders();
+}
+
+function showOut(user) {
+  $("whoami").textContent = user.email;
+  $("outBtn").classList.remove("hide");
+  $("outBtn").addEventListener("click", async () => { await signOut(); location.reload(); });
+}
+
+function gateSignIn() {
+  $("gate").innerHTML = `
+    <div class="panel" style="max-width:380px">
+      <div class="panel-head"><span class="tag tag-ink">Sign in</span></div>
+      <label class="field"><span>Email</span><input class="input" id="gEmail" type="email"></label>
+      <label class="field"><span>Password</span><input class="input" id="gPass" type="password"></label>
+      <div id="gMsg"></div>
+      <button class="btn" id="gGo">Sign in</button>
+    </div>`;
+  $("gGo").addEventListener("click", async () => {
+    const { error } = await signIn($("gEmail").value.trim(), $("gPass").value);
+    if (error) { $("gMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+    location.reload();
+  });
+}
+
+/* ================= tabs ================= */
+document.querySelectorAll(".tab").forEach((t) =>
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
+    ["items", "codes", "orders"].forEach((n) =>
+      $(`tab${n[0].toUpperCase()}${n.slice(1)}`).classList.toggle("hide", n !== t.dataset.tab));
+  }));
+
+/* ================= items ================= */
+let ITEMS = [];
+let editing = null;
+
+async function loadItems() {
+  const { data, error } = await sb.from("products").select("*").order("collection").order("position");
+  if (error) { $("tabItems").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  ITEMS = data || [];
+  paintItems();
+}
+
+function paintItems() {
+  $("tabItems").innerHTML = `
+    <div class="admin-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <span class="tag tag-ink">${editing ? "Edit item" : "New item"}</span>
+          ${editing ? `<button class="tab" id="cancelEdit" style="margin-left:auto;padding:0">Cancel</button>` : ""}
+        </div>
+        <label class="field"><span>Code (sku)</span><input class="input" id="fSku" placeholder="TEE-BLACK-M"></label>
+        <label class="field"><span>Name</span><input class="input" id="fName" placeholder="Heavyweight tee"></label>
+        <label class="field"><span>Description</span><textarea class="input" id="fBlurb" rows="3"></textarea></label>
+        <div class="row">
+          <label class="field" style="flex:1"><span>Price (${cfg.CURRENCY.toUpperCase()})</span><input class="input" id="fPrice" type="number" step="0.01" min="0" value="0.00"></label>
+          <label class="field" style="flex:1"><span>Stock</span><input class="input" id="fStock" type="number" min="0" value="0"></label>
+        </div>
+        <div class="row">
+          <label class="field" style="flex:1"><span>Rail</span><input class="input" id="fColl" value="shirts"></label>
+          <label class="field" style="width:90px"><span>Order</span><input class="input" id="fPos" type="number" value="0"></label>
+        </div>
+        <label class="field"><span>Photo</span><input class="input" id="fFile" type="file" accept="image/*"></label>
+        <label class="field"><span>or image url</span><input class="input" id="fImg" placeholder="https://…"></label>
+        <label class="row" style="margin:6px 0 14px">
+          <input type="checkbox" id="fActive" checked>
+          <span class="tag">Visible in the shop</span>
+        </label>
+        <div id="itemMsg"></div>
+        <button class="btn" id="saveItem">${editing ? "Save changes" : "Add item"}</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><span class="tag tag-ink">Catalogue</span><span class="tag">${ITEMS.length} items</span></div>
+        ${ITEMS.length ? `
+        <table class="grid-table">
+          <thead><tr><th></th><th>Item</th><th>Rail</th><th>Price</th><th>Stock</th><th></th></tr></thead>
+          <tbody>${ITEMS.map((p) => `
+            <tr>
+              <td>${p.image_url ? `<img class="thumb" src="${escapeHtml(p.image_url)}" alt="">` : `<div class="thumb"></div>`}</td>
+              <td><b>${escapeHtml(p.name)}</b><br><span class="mini">${escapeHtml(p.sku)}</span>${p.active ? "" : ` <span class="mini sold-out">hidden</span>`}</td>
+              <td class="mini">${escapeHtml(p.collection)}</td>
+              <td class="mini">${money(p.price_cents, p.currency)}</td>
+              <td class="mini">${p.stock}</td>
+              <td class="row">
+                <button class="tab" data-edit="${p.id}" style="padding:2px 6px">Edit</button>
+                <button class="tab" data-del="${p.id}" style="padding:2px 6px">Delete</button>
+              </td>
+            </tr>`).join("")}</tbody>
+        </table>` : `<p class="empty">No items yet. Add the first one on the left.</p>`}
+      </div>
+    </div>`;
+
+  if (editing) {
+    $("fSku").value = editing.sku; $("fName").value = editing.name;
+    $("fBlurb").value = editing.blurb || ""; $("fPrice").value = eur(editing.price_cents);
+    $("fStock").value = editing.stock; $("fColl").value = editing.collection;
+    $("fPos").value = editing.position; $("fImg").value = editing.image_url || "";
+    $("fActive").checked = editing.active;
+    $("cancelEdit").addEventListener("click", () => { editing = null; paintItems(); });
+  }
+
+  $("saveItem").addEventListener("click", saveItem);
+  document.querySelectorAll("[data-edit]").forEach((b) =>
+    b.addEventListener("click", () => { editing = ITEMS.find((p) => p.id === b.dataset.edit); paintItems(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
+  document.querySelectorAll("[data-del]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Delete this item? Orders that include it are kept.")) return;
+      await sb.from("products").delete().eq("id", b.dataset.del);
+      loadItems();
+    }));
+}
+
+async function saveItem() {
+  const msg = $("itemMsg");
+  const sku = $("fSku").value.trim(), name = $("fName").value.trim();
+  if (!sku || !name) { msg.innerHTML = `<p class="notice notice-bad">A code and a name are required.</p>`; return; }
+
+  let image_url = $("fImg").value.trim() || null;
+  const file = $("fFile").files[0];
+  if (file) {
+    msg.innerHTML = `<p class="notice">Uploading the photo…</p>`;
+    const path = `${sku.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}.${file.name.split(".").pop()}`;
+    const { error: upErr } = await sb.storage.from("product-images").upload(path, file, { upsert: true });
+    if (upErr) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(upErr.message)}</p>`; return; }
+    image_url = sb.storage.from("product-images").getPublicUrl(path).data.publicUrl;
+  }
+
+  const row = {
+    sku, name,
+    blurb: $("fBlurb").value.trim() || null,
+    price_cents: Math.round(parseFloat($("fPrice").value || "0") * 100),
+    stock: parseInt($("fStock").value || "0", 10),
+    collection: $("fColl").value.trim() || "shirts",
+    position: parseInt($("fPos").value || "0", 10),
+    active: $("fActive").checked,
+    currency: cfg.CURRENCY,
+  };
+  if (image_url) row.image_url = image_url;
+
+  const { error } = editing
+    ? await sb.from("products").update(row).eq("id", editing.id)
+    : await sb.from("products").insert(row);
+
+  if (error) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  editing = null;
+  await loadItems();
+  await loadCodes();
+}
+
+/* ================= garment codes ================= */
+let CODES = [];
+
+async function loadCodes() {
+  const { data } = await sb.from("garment_codes")
+    .select("code,item_number,product_id,claimed_by,claimed_at")
+    .order("created_at", { ascending: false }).limit(400);
+  CODES = data || [];
+  paintCodes();
+}
+
+/* 80 bits of randomness, no ambiguous characters (no 0/O, 1/I). */
+function newToken(n = 16) {
+  const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(n));
+  return Array.from(bytes, (b) => abc[b % 32]).join("");
+}
+
+function paintCodes() {
+  const claimed = CODES.filter((c) => c.claimed_by).length;
+  $("tabCodes").innerHTML = `
+    <div class="admin-grid">
+      <div class="panel">
+        <div class="panel-head"><span class="tag tag-ink">Print a run</span></div>
+        <p class="mini" style="color:var(--ink-soft);line-height:1.6">Each garment gets its own code.
+          Print the QR on the care label. Once someone claims it, later scans go straight to the shop.</p>
+        <label class="field"><span>Item</span>
+          <select class="input" id="gProduct">
+            ${ITEMS.map((p) => `<option value="${p.id}" data-sku="${escapeHtml(p.sku)}">${escapeHtml(p.name)}</option>`).join("")}
+          </select></label>
+        <div class="row">
+          <label class="field" style="flex:1"><span>How many</span><input class="input" id="gCount" type="number" min="1" max="200" value="12"></label>
+          <label class="field" style="flex:1"><span>Serial starts at</span><input class="input" id="gStart" type="number" min="1" value="1"></label>
+        </div>
+        <div id="genMsg"></div>
+        <button class="btn" id="genGo" ${ITEMS.length ? "" : "disabled"}>Generate codes</button>
+        ${ITEMS.length ? "" : `<p class="notice notice-bad">Add an item first.</p>`}
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="tag tag-ink">Codes</span>
+          <span class="tag">${CODES.length} printed · ${claimed} claimed</span>
+          <button class="tab no-print" id="printBtn" style="margin-left:auto">Print sheet</button>
+        </div>
+        <div class="qr-sheet" id="qrSheet"></div>
+        ${CODES.length ? "" : `<p class="empty">No codes yet.</p>`}
+      </div>
+    </div>`;
+
+  $("printBtn")?.addEventListener("click", () => window.print());
+  $("genGo")?.addEventListener("click", generateCodes);
+  paintSheet();
+}
+
+function paintSheet() {
+  const sheet = $("qrSheet");
+  if (!sheet) return;
+  sheet.innerHTML = "";
+  CODES.slice(0, 120).forEach((c) => {
+    const cell = document.createElement("div");
+    cell.className = "qr-cell";
+    cell.innerHTML = `<canvas></canvas>
+      <span class="serial">${escapeHtml(c.item_number)}</span>
+      <span class="tag" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>`;
+    sheet.appendChild(cell);
+    const url = `${cfg.SITE_URL}/q.html?i=${encodeURIComponent(c.item_number)}&c=${encodeURIComponent(c.code)}`;
+    window.QRCode?.toCanvas(cell.querySelector("canvas"), url,
+      { width: 220, margin: 1, color: { dark: "#14161A", light: "#ffffff" } });
+  });
+}
+
+async function generateCodes() {
+  const msg = $("genMsg");
+  const sel = $("gProduct");
+  const product_id = sel.value;
+  const sku = sel.selectedOptions[0].dataset.sku;
+  const count = Math.min(200, Math.max(1, parseInt($("gCount").value || "1", 10)));
+  const start = Math.max(1, parseInt($("gStart").value || "1", 10));
+
+  const rows = Array.from({ length: count }, (_, k) => ({
+    code: newToken(),
+    item_number: `${sku}-${String(start + k).padStart(4, "0")}`,
+    product_id,
+  }));
+
+  msg.innerHTML = `<p class="notice">Writing ${count} codes…</p>`;
+  const { error } = await sb.from("garment_codes").insert(rows);
+  if (error) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  msg.innerHTML = `<p class="notice">${count} codes ready. Print the sheet on the right.</p>`;
+  $("gStart").value = start + count;
+  loadCodes();
+}
+
+/* ================= orders ================= */
+async function loadOrders() {
+  const { data } = await sb.from("orders")
+    .select("id,email,status,subtotal_cents,credit_applied_cents,total_cents,referral_code,created_at")
+    .order("created_at", { ascending: false }).limit(100);
+  const rows = data || [];
+  const paid = rows.filter((o) => o.status === "paid");
+  const gross = paid.reduce((s, o) => s + o.subtotal_cents, 0);
+
+  $("tabOrders").innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <span class="tag tag-ink">Orders</span>
+        <span class="tag">${paid.length} paid · ${money(gross)} gross</span>
+      </div>
+      ${rows.length ? `
+      <table class="grid-table">
+        <thead><tr><th>When</th><th>Buyer</th><th>Status</th><th>Subtotal</th><th>Credit</th><th>Charged</th><th>Referral</th></tr></thead>
+        <tbody>${rows.map((o) => `
+          <tr>
+            <td class="mini">${new Date(o.created_at).toLocaleDateString(cfg.LOCALE)}</td>
+            <td class="mini">${escapeHtml(o.email || "—")}</td>
+            <td class="mini ${o.status === "paid" ? "" : "sold-out"}">${o.status}</td>
+            <td class="mini">${money(o.subtotal_cents)}</td>
+            <td class="mini">${o.credit_applied_cents ? "−" + money(o.credit_applied_cents) : "—"}</td>
+            <td class="mini">${money(o.total_cents)}</td>
+            <td class="mini">${escapeHtml(o.referral_code || "—")}</td>
+          </tr>`).join("")}</tbody>
+      </table>` : `<p class="empty">No orders yet.</p>`}
+    </div>`;
+}
+
+boot();
+</script>
+</body>
+</html>

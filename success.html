@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order placed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shop.css">
+<script src="./config.js"></script>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-in"><a class="redaction" href="./index.html" id="brand"></a></div>
+</header>
+
+<main class="shell">
+  <div class="pane" id="pane">
+    <span class="tag">Order</span>
+    <h2 style="margin:12px 0 10px">Thank you.</h2>
+    <p class="hero-lede">Your order is in. A receipt is on its way to your inbox.</p>
+    <div id="detail"></div>
+    <a class="btn" href="./index.html" style="margin-top:24px">Back to the shop</a>
+  </div>
+</main>
+
+<script type="module">
+import { cfg, sb, money, escapeHtml, clearCart, currentUser, fetchBalance } from "./shop.js";
+
+document.getElementById("brand").textContent = cfg.BRAND;
+clearCart();
+
+const orderId = new URLSearchParams(location.search).get("order");
+const detail = document.getElementById("detail");
+
+if (orderId) {
+  const user = await currentUser();
+  if (user) {
+    // The webhook settles the order a moment after Stripe redirects, so
+    // give it a couple of tries before saying anything definite.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { data } = await sb.from("orders")
+        .select("status,total_cents,credit_applied_cents").eq("id", orderId).maybeSingle();
+      if (data?.status === "paid") {
+        const balance = await fetchBalance();
+        detail.innerHTML = `
+          <div class="total-row" style="margin-top:20px"><span class="tag">Paid</span><span class="price">${money(data.total_cents)}</span></div>
+          ${data.credit_applied_cents ? `<div class="total-row"><span class="tag">Credit used</span><span class="price">−${money(data.credit_applied_cents)}</span></div>` : ""}
+          <div class="total-row"><span class="tag">Balance left</span><span class="price">${money(balance)}</span></div>`;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+  }
+  detail.insertAdjacentHTML("beforeend",
+    `<p class="tag" style="margin-top:18px">Reference ${escapeHtml(orderId.slice(0, 8))}</p>`);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shop.css">
+<script src="./config.js"></script>
+</head>
+<body>
+
+<header class="masthead" id="masthead"></header>
+
+<main class="shell">
+
+  <section class="hero">
+    <div class="hero-label">
+      <span class="tag">100% cotton · no logo · one serial per garment</span>
+      <h1>Every shirt<br>has a number.</h1>
+      <p class="hero-lede">The code inside the hem belongs to whoever claims it first.
+         When someone else scans that shirt and buys, fifty cents lands in your balance.
+         Spend it back here.</p>
+      <div class="hero-rule">
+        <span class="tag">Machine wash 30</span>
+        <span class="tag">Do not bleach</span>
+        <span class="tag">Tumble dry low</span>
+        <span class="tag tag-ink">Scan inside hem</span>
+      </div>
+    </div>
+    <div class="ticker" aria-hidden="true">
+      <div class="ticker-track" id="ticker"></div>
+    </div>
+  </section>
+
+  <div id="rails"></div>
+  <div id="railsEmpty" class="empty hide">
+    <p class="tag">Nothing in stock yet.</p>
+    <p>Add your first item from the back office and it will appear here.</p>
+  </div>
+
+  <footer class="foot">
+    <span class="redaction" id="footBrand"></span>
+    <span class="tag">Made in small runs</span>
+    <a class="tag" href="./admin.html">Back office</a>
+  </footer>
+</main>
+
+<!-- ---------------- cart drawer ---------------- -->
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Shopping bag">
+  <div class="drawer-head">
+    <span class="tag tag-ink">Your bag</span>
+    <button class="x-btn" id="drawerClose" aria-label="Close bag">&times;</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+  <div class="drawer-foot" id="drawerFoot"></div>
+</aside>
+
+<!-- ---------------- auth / account ---------------- -->
+<div class="modal" id="modal">
+  <div class="modal-card" id="modalCard"></div>
+</div>
+
+<script type="module">
+import {
+  cfg, sb, money, escapeHtml, fetchProducts, readCart, setQty, cartCount,
+  mountMasthead, refreshCredit, refreshCartCount, renderRail,
+  currentUser, signIn, signUp, signOut, fetchBalance, startCheckout, rememberRef
+} from "./shop.js";
+
+document.title = cfg.BRAND;
+document.getElementById("footBrand").textContent = cfg.BRAND;
+mountMasthead(document.getElementById("masthead"));
+
+/* a QR scan can hand us a referral code on the way in */
+const params = new URLSearchParams(location.search);
+if (params.get("ref")) {
+  rememberRef(params.get("ref"));
+  history.replaceState({}, "", location.pathname);
+}
+
+/* ticker */
+const words = ["No logo", "Serial numbered", "Claim your hem", "€0.50 per referral",
+               "Small runs", "Machine wash 30", "Store credit, not cashback"];
+document.getElementById("ticker").innerHTML =
+  [...words, ...words].map(w => `<span class="tag">${w}</span>`).join("");
+
+/* ---------------- catalogue ---------------- */
+let PRODUCTS = [];
+async function loadCatalogue() {
+  const mount = document.getElementById("rails");
+  try { PRODUCTS = await fetchProducts(); }
+  catch { mount.innerHTML = `<p class="notice notice-bad">Could not load the catalogue. Check your Supabase settings in config.js.</p>`; return; }
+
+  if (!PRODUCTS.length) { document.getElementById("railsEmpty").classList.remove("hide"); return; }
+
+  const groups = new Map();
+  for (const p of PRODUCTS) {
+    if (!groups.has(p.collection)) groups.set(p.collection, []);
+    groups.get(p.collection).push(p);
+  }
+  mount.innerHTML = "";
+  for (const [name, items] of groups) {
+    renderRail(mount, { title: name.replace(/^\w/, c => c.toUpperCase()), products: items });
+  }
+}
+
+/* ---------------- cart drawer ---------------- */
+const scrim = document.getElementById("scrim");
+const drawer = document.getElementById("drawer");
+const openDrawer = () => { drawer.classList.add("open"); scrim.classList.add("open"); paintCart(); };
+const closeDrawer = () => { drawer.classList.remove("open"); scrim.classList.remove("open"); };
+scrim.addEventListener("click", closeDrawer);
+document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+document.getElementById("cartChip").addEventListener("click", openDrawer);
+document.addEventListener("keydown", e => { if (e.key === "Escape") { closeDrawer(); closeModal(); } });
+
+let useCredit = false;
+
+async function paintCart() {
+  const body = document.getElementById("drawerBody");
+  const foot = document.getElementById("drawerFoot");
+  const lines = readCart()
+    .map(l => ({ ...l, product: PRODUCTS.find(p => p.id === l.product_id) }))
+    .filter(l => l.product);
+
+  if (!lines.length) {
+    body.innerHTML = `<p class="empty">Nothing here yet. Add something from the rails.</p>`;
+    foot.innerHTML = "";
+    return;
+  }
+
+  body.innerHTML = lines.map(l => `
+    <div class="line">
+      <div class="line-shot">${l.product.image_url
+        ? `<img src="${l.product.image_url}" alt="">` : ""}</div>
+      <div style="flex:1">
+        <div class="card-name">${escapeHtml(l.product.name)}</div>
+        <span class="tag">${escapeHtml(l.product.sku)}</span>
+        <div class="qty">
+          <button data-id="${l.product_id}" data-q="${l.qty - 1}">&minus;</button>
+          <span class="serial">${l.qty}</span>
+          <button data-id="${l.product_id}" data-q="${l.qty + 1}">+</button>
+          <span class="price" style="margin-left:auto">${money(l.product.price_cents * l.qty)}</span>
+        </div>
+      </div>
+    </div>`).join("");
+
+  body.querySelectorAll(".qty button").forEach(b =>
+    b.addEventListener("click", () => setQty(b.dataset.id, Number(b.dataset.q))));
+
+  const subtotal = lines.reduce((s, l) => s + l.product.price_cents * l.qty, 0);
+  const user = await currentUser();
+  const balance = user ? await fetchBalance() : 0;
+  const applied = useCredit ? Math.min(balance, subtotal) : 0;
+
+  foot.innerHTML = `
+    ${balance > 0 ? `
+      <label class="credit-toggle">
+        <input type="checkbox" id="useCredit" ${useCredit ? "checked" : ""}>
+        <span class="tag" style="color:inherit">Use ${money(balance)} credit</span>
+      </label>` : ""}
+    <div class="total-row"><span class="tag">Subtotal</span><span class="price">${money(subtotal)}</span></div>
+    ${applied ? `<div class="total-row"><span class="tag">Credit</span><span class="price">−${money(applied)}</span></div>` : ""}
+    <div class="total-row grand"><span class="tag tag-ink">To pay</span><span class="price">${money(subtotal - applied)}</span></div>
+    <div id="checkoutMsg"></div>
+    <button class="btn" id="checkoutBtn" style="margin-top:14px">Checkout</button>`;
+
+  const toggle = document.getElementById("useCredit");
+  if (toggle) toggle.addEventListener("change", () => { useCredit = toggle.checked; paintCart(); });
+
+  document.getElementById("checkoutBtn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const msg = document.getElementById("checkoutMsg");
+    const email = user?.email || prompt("Email for your receipt:");
+    if (!email) return;
+    btn.disabled = true; btn.textContent = "Opening checkout…";
+    try { await startCheckout({ useCredit, email }); }
+    catch (err) {
+      msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(err.message)}</p>`;
+      btn.disabled = false; btn.textContent = "Checkout";
+    }
+  });
+}
+
+document.addEventListener("cart:changed", () => { refreshCartCount(); paintCart(); });
+
+/* ---------------- account modal ---------------- */
+const modal = document.getElementById("modal");
+const card  = document.getElementById("modalCard");
+const closeModal = () => modal.classList.remove("open");
+modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
+document.getElementById("accountChip").addEventListener("click", paintAccount);
+
+async function paintAccount() {
+  modal.classList.add("open");
+  const user = await currentUser();
+  if (!user) return paintAuth("in");
+
+  const { data } = await sb.rpc("my_earnings");
+  const e = data || { balance_cents: 0, garments: 0, referrals: 0 };
+  const { data: codes } = await sb.from("garment_codes").select("item_number, claimed_at");
+
+  card.innerHTML = `
+    <span class="tag">Signed in as</span>
+    <p class="serial" style="margin:4px 0 20px">${escapeHtml(user.email)}</p>
+    <div class="total-row"><span class="tag">Balance</span><span class="price">${money(e.balance_cents)}</span></div>
+    <div class="total-row"><span class="tag">Garments claimed</span><span class="price">${e.garments}</span></div>
+    <div class="total-row"><span class="tag">Referred sales</span><span class="price">${e.referrals}</span></div>
+    ${codes?.length ? `<div style="margin-top:18px">
+      <span class="tag">Your serials</span>
+      <p class="serial" style="margin:6px 0 0;line-height:1.7">${codes.map(c => escapeHtml(c.item_number)).join("<br>")}</p>
+    </div>` : ""}
+    <button class="btn btn-hollow" id="outBtn" style="margin-top:22px">Sign out</button>`;
+  document.getElementById("outBtn").addEventListener("click", async () => {
+    await signOut(); closeModal(); refreshCredit();
+  });
+}
+
+function paintAuth(mode) {
+  const isUp = mode === "up";
+  card.innerHTML = `
+    <span class="tag">${isUp ? "Create an account" : "Sign in"}</span>
+    <h2 style="margin:10px 0 18px">${isUp ? "Start a balance" : "Welcome back"}</h2>
+    ${isUp ? `<label class="field"><span>Name</span><input class="input" id="aName"></label>` : ""}
+    <label class="field"><span>Email</span><input class="input" id="aEmail" type="email" autocomplete="email"></label>
+    <label class="field"><span>Password</span><input class="input" id="aPass" type="password" autocomplete="${isUp ? "new-password" : "current-password"}"></label>
+    <div id="authMsg"></div>
+    <button class="btn" id="authGo" style="margin-top:8px">${isUp ? "Create account" : "Sign in"}</button>
+    <button class="btn btn-hollow" id="authSwap" style="margin-top:8px">${isUp ? "I already have one" : "I need an account"}</button>`;
+
+  document.getElementById("authSwap").addEventListener("click", () => paintAuth(isUp ? "in" : "up"));
+  document.getElementById("authGo").addEventListener("click", async () => {
+    const msg = document.getElementById("authMsg");
+    const email = document.getElementById("aEmail").value.trim();
+    const pass  = document.getElementById("aPass").value;
+    if (!email || !pass) { msg.innerHTML = `<p class="notice notice-bad">Enter an email and a password.</p>`; return; }
+    const { error } = isUp
+      ? await signUp(email, pass, document.getElementById("aName").value.trim())
+      : await signIn(email, pass);
+    if (error) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+    await refreshCredit();
+    paintAccount();
+  });
+}
+
+/* ---------------- boot ---------------- */
+await loadCatalogue();
+refreshCartCount();
+refreshCredit();
+if (params.get("bag")) openDrawer();
+sb.auth.onAuthStateChange(() => { refreshCredit(); paintCart(); });
+</script>
+</body>
+</html>

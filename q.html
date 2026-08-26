@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shop.css">
+<script src="./config.js"></script>
+</head>
+<body>
+
+<div class="scan-wrap">
+  <header class="scan-head">
+    <a class="redaction" href="./index.html" id="brand"></a>
+    <span class="tag">Garment</span>
+    <span class="scan-serial" id="serial">…</span>
+  </header>
+  <main class="scan-main" id="stage">
+    <div class="pane"><p class="tag">Reading the code…</p></div>
+  </main>
+</div>
+
+<script type="module">
+import {
+  cfg, sb, money, escapeHtml, rememberRef, addToCart,
+  currentUser, signIn, signUp
+} from "./shop.js";
+
+document.getElementById("brand").textContent = cfg.BRAND;
+
+const params = new URLSearchParams(location.search);
+const CODE = params.get("c");
+const ITEM = params.get("i");
+const stage = document.getElementById("stage");
+const serialEl = document.getElementById("serial");
+
+let status = null;   // { found, item_number, claimed, mine, product }
+
+/* ------------------------------------------------------------------
+   The whole page is one decision: has this code been claimed already?
+   Claimed  → the shirt already has an owner, so only the shop matters.
+   Unclaimed → offer the fork.
+   ------------------------------------------------------------------ */
+async function boot() {
+  if (!CODE) return fail("This link is missing its code. Check the QR and scan again.");
+
+  const { data, error } = await sb.rpc("code_status", { p_code: CODE });
+  if (error) return fail("Could not reach the shop. Check your connection and scan again.");
+  status = data;
+  if (!status?.found) return fail("No garment carries this code.");
+
+  serialEl.textContent = status.item_number || ITEM || "—";
+  rememberRef(CODE);                    // the code follows the buyer either way
+
+  if (status.claimed) return viewBuy();
+  viewFork();
+}
+
+/* ---------- the fork, shown once per garment ---------- */
+function viewFork() {
+  stage.innerHTML = `
+    <div class="choice-grid">
+      <button class="choice choice-a" id="pickOwner">
+        <span class="choice-title">This one<br>is mine</span>
+        <p class="choice-note">Claim the serial and every future scan of this shirt earns you credit.</p>
+        <span class="choice-mark">Claim →</span>
+      </button>
+      <button class="choice choice-b" id="pickBuyer">
+        <span class="choice-title">I want<br>one too</span>
+        <p class="choice-note">Buy the same piece. Fifty cents goes to whoever is wearing this one.</p>
+        <span class="choice-mark">Shop →</span>
+      </button>
+    </div>`;
+  document.getElementById("pickOwner").addEventListener("click", viewClaim);
+  document.getElementById("pickBuyer").addEventListener("click", viewBuy);
+}
+
+/* ---------- claim path: sign in or sign up, then bind the code ---------- */
+async function viewClaim() {
+  const user = await currentUser();
+  if (user) return doClaim();
+
+  render("in");
+
+  function render(mode) {
+    const isUp = mode === "up";
+    stage.innerHTML = `
+      <div class="pane">
+        <span class="tag">Serial ${escapeHtml(status.item_number)}</span>
+        <h2 style="margin:12px 0 6px">${isUp ? "Create your account" : "Sign in to claim"}</h2>
+        <p class="hero-lede" style="margin-bottom:20px">The serial locks to this account permanently. Credit from it lands here.</p>
+        ${isUp ? `<label class="field"><span>Name</span><input class="input" id="cName"></label>` : ""}
+        <label class="field"><span>Email</span><input class="input" id="cEmail" type="email" autocomplete="email"></label>
+        <label class="field"><span>Password</span><input class="input" id="cPass" type="password" autocomplete="${isUp ? "new-password" : "current-password"}"></label>
+        <div id="claimMsg"></div>
+        <button class="btn" id="claimGo" style="margin-top:8px">${isUp ? "Create account and claim" : "Sign in and claim"}</button>
+        <button class="btn btn-hollow" id="claimSwap" style="margin-top:8px">${isUp ? "I already have an account" : "I need an account"}</button>
+      </div>`;
+
+    document.getElementById("claimSwap").addEventListener("click", () => render(isUp ? "in" : "up"));
+    document.getElementById("claimGo").addEventListener("click", async (e) => {
+      const btn = e.currentTarget, msg = document.getElementById("claimMsg");
+      const email = document.getElementById("cEmail").value.trim();
+      const pass  = document.getElementById("cPass").value;
+      if (!email || !pass) { msg.innerHTML = note("Enter an email and a password.", true); return; }
+      btn.disabled = true;
+      const { error } = isUp
+        ? await signUp(email, pass, document.getElementById("cName").value.trim())
+        : await signIn(email, pass);
+      if (error) { msg.innerHTML = note(error.message, true); btn.disabled = false; return; }
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        msg.innerHTML = note("Check your inbox to confirm the address, then scan again to finish claiming.", false);
+        btn.disabled = false; return;
+      }
+      doClaim();
+    });
+  }
+}
+
+async function doClaim() {
+  const { data, error } = await sb.rpc("claim_code", { p_code: CODE });
+  if (error) return fail("The claim did not go through. Scan again in a moment.");
+
+  if (data?.ok) return viewClaimed();
+  if (data?.error === "already_claimed")
+    return fail("This serial already belongs to another account.", true);
+  fail("This code cannot be claimed.");
+}
+
+function viewClaimed() {
+  stage.innerHTML = `
+    <div class="pane">
+      <span class="tag">Claimed</span>
+      <h2 style="margin:12px 0 8px">Serial ${escapeHtml(status.item_number)} is yours.</h2>
+      <p class="hero-lede">Wear it. Every time someone scans this shirt and buys,
+         ${money(50)} is added to your balance. Spend it on anything in the shop.</p>
+      <a class="btn" href="./index.html" style="margin-top:22px">Browse the shop</a>
+    </div>`;
+}
+
+/* ---------- buy path ---------- */
+function viewBuy() {
+  const p = status.product;
+  if (!p) {
+    stage.innerHTML = `
+      <div class="pane">
+        <span class="tag">Serial ${escapeHtml(status.item_number)}</span>
+        <h2 style="margin:12px 0 8px">This piece is out of the catalogue.</h2>
+        <p class="hero-lede">Have a look at what is in stock instead.</p>
+        <a class="btn" href="./index.html" style="margin-top:22px">Browse the shop</a>
+      </div>`;
+    return;
+  }
+
+  const out = p.stock <= 0;
+  stage.innerHTML = `
+    <div class="buy-pane">
+      <div class="buy-shot">${p.image_url
+        ? `<img src="${p.image_url}" alt="${escapeHtml(p.name)}">`
+        : `<span class="redaction redaction-lg">${escapeHtml(cfg.BRAND)}</span>`}</div>
+      <div class="buy-info">
+        <span class="tag">${escapeHtml(p.sku)} · serial ${escapeHtml(status.item_number)}</span>
+        <h2>${escapeHtml(p.name)}</h2>
+        ${p.blurb ? `<p class="hero-lede">${escapeHtml(p.blurb)}</p>` : ""}
+        <span class="buy-price ${out ? "sold-out" : ""}">${out ? "Sold out" : money(p.price_cents, p.currency)}</span>
+        <button class="btn" id="buyGo" ${out ? "disabled" : ""}>Add to bag</button>
+        <a class="btn btn-hollow" href="./index.html">See everything else</a>
+        <p class="tag" style="margin-top:auto">${status.mine
+          ? "This serial is registered to you."
+          : `${money(50)} of this sale goes to the owner of this shirt.`}</p>
+      </div>
+    </div>`;
+
+  if (!out) document.getElementById("buyGo").addEventListener("click", () => {
+    addToCart(p.id);
+    location.href = `./index.html?ref=${encodeURIComponent(CODE)}&bag=1`;
+  });
+}
+
+/* ---------- helpers ---------- */
+const note = (t, bad) => `<p class="notice ${bad ? "notice-bad" : ""}">${escapeHtml(t)}</p>`;
+
+function fail(message, offerShop = true) {
+  stage.innerHTML = `
+    <div class="pane">
+      <span class="tag">Code ${escapeHtml(CODE || "—")}</span>
+      <h2 style="margin:12px 0 8px">${escapeHtml(message)}</h2>
+      ${offerShop ? `<a class="btn" href="./index.html" style="margin-top:18px">Browse the shop</a>` : ""}
+    </div>`;
+}
+
+boot();
+</script>
+</body>
+</html>
