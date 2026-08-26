@@ -101,6 +101,9 @@ const STRINGS = {
     registeredToYou: "This serial is registered to you.",
     goesToOwner: "{amount} of this sale goes to the owner of this shirt.",
 
+    shipping: "Shipping", handling: "Handling", freeShip: "Free",
+    notDiscounted: "Shipping and handling are not discounted.",
+
     forgot: "Forgotten your password?",
     resetTitle: "Password",
     resetNote: "Type your email and we will send you a link to set a new one.",
@@ -205,6 +208,9 @@ const STRINGS = {
     lookInstead: "Dai un'occhiata a cosa c'è disponibile.",
     registeredToYou: "Questo numero è registrato a te.",
     goesToOwner: "{amount} di questa vendita vanno a chi possiede questa maglia.",
+
+    shipping: "Spedizione", handling: "Gestione", freeShip: "Gratis",
+    notDiscounted: "Spedizione e gestione non sono scontate.",
 
     forgot: "Password dimenticata?",
     resetTitle: "Password",
