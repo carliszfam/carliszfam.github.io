@@ -413,7 +413,8 @@ function paintAuth(mode) {
     <label class="field"><span>${t("password")}</span><input class="input" id="aPass" type="password" autocomplete="${isUp ? "new-password" : "current-password"}"></label>
     <div id="authMsg"></div>
     <button class="btn" id="authGo" style="margin-top:8px">${isUp ? t("createAccount") : t("signIn")}</button>
-    <button class="btn btn-hollow" id="authSwap" style="margin-top:8px">${isUp ? t("haveOne") : t("needOne")}</button>`;
+    <button class="btn btn-hollow" id="authSwap" style="margin-top:8px">${isUp ? t("haveOne") : t("needOne")}</button>
+    ${isUp ? "" : `<a class="tag" href="./reset.html" style="display:block;text-align:center;margin-top:14px">${t("forgot")}</a>`}`;
 
   document.getElementById("authSwap").addEventListener("click", () => paintAuth(isUp ? "in" : "up"));
   document.getElementById("authGo").addEventListener("click", async () => {

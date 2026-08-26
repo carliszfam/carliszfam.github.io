@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Password</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shop.css?v=8">
+<script src="./config.js?v=8"></script>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-in"><a class="redaction" href="./index.html" id="brand"></a></div>
+</header>
+
+<main class="shell">
+  <div class="pane" id="pane"></div>
+</main>
+
+<script type="module">
+import { cfg, sb, escapeHtml, t } from "./shop.js?v=8";
+
+document.getElementById("brand").textContent = cfg.BRAND;
+const pane = document.getElementById("pane");
+
+/* Two jobs on one page. Arriving from the emailed link carries a recovery
+   token in the URL fragment, which supabase-js exchanges for a short-lived
+   session; anything else means the visitor wants a link sent. */
+const arrivingFromEmail = /type=recovery|access_token=/.test(location.hash);
+
+if (arrivingFromEmail) {
+  askForNewPassword();
+  // the session lands asynchronously, so react if it arrives late
+  sb.auth.onAuthStateChange((event) => {
+    if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") askForNewPassword();
+  });
+} else {
+  askForEmail();
+}
+
+function askForEmail() {
+  pane.innerHTML = `
+    <span class="tag">${t("resetTitle")}</span>
+    <h2 style="margin:12px 0 8px">${t("forgot")}</h2>
+    <p class="hero-lede" style="margin-bottom:20px">${t("resetNote")}</p>
+    <label class="field"><span>${t("email")}</span><input class="input" id="rEmail" type="email" autocomplete="email"></label>
+    <div id="rMsg"></div>
+    <button class="btn" id="rGo">${t("sendLink")}</button>
+    <a class="btn btn-hollow" href="./index.html" style="margin-top:8px">${t("backToShop")}</a>`;
+
+  document.getElementById("rGo").addEventListener("click", async (e) => {
+    const btn = e.currentTarget, msg = document.getElementById("rMsg");
+    const email = document.getElementById("rEmail").value.trim();
+    if (!email) { msg.innerHTML = `<p class="notice notice-bad">${t("email")}</p>`; return; }
+    btn.disabled = true;
+
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: `${cfg.SITE_URL}/reset.html`,
+    });
+    // Deliberately the same answer either way: confirming which addresses
+    // have accounts would let anyone probe your customer list.
+    msg.innerHTML = error
+      ? `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`
+      : `<p class="notice">${t("linkSent")}</p>`;
+    btn.disabled = false;
+  });
+}
+
+function askForNewPassword() {
+  if (pane.dataset.mode === "set") return;
+  pane.dataset.mode = "set";
+  pane.innerHTML = `
+    <span class="tag">${t("resetTitle")}</span>
+    <h2 style="margin:12px 0 20px">${t("newPassword")}</h2>
+    <label class="field"><span>${t("newPassword")}</span><input class="input" id="p1" type="password" autocomplete="new-password"></label>
+    <div id="pMsg"></div>
+    <button class="btn" id="pGo">${t("savePassword")}</button>`;
+
+  document.getElementById("pGo").addEventListener("click", async (e) => {
+    const btn = e.currentTarget, msg = document.getElementById("pMsg");
+    const pw = document.getElementById("p1").value;
+    if (pw.length < 8) { msg.innerHTML = `<p class="notice notice-bad">${t("tooShort")}</p>`; return; }
+    btn.disabled = true;
+
+    const { error } = await sb.auth.updateUser({ password: pw });
+    if (error) {
+      msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`;
+      btn.disabled = false; return;
+    }
+    pane.innerHTML = `
+      <span class="tag">${t("resetTitle")}</span>
+      <h2 style="margin:12px 0 8px">${t("passwordSaved")}</h2>
+      <a class="btn" href="./index.html" style="margin-top:18px">${t("backToShop")}</a>`;
+  });
+}
+</script>
+</body>
+</html>

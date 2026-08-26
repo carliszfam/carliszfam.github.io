@@ -101,6 +101,15 @@ const STRINGS = {
     registeredToYou: "This serial is registered to you.",
     goesToOwner: "{amount} of this sale goes to the owner of this shirt.",
 
+    forgot: "Forgotten your password?",
+    resetTitle: "Password",
+    resetNote: "Type your email and we will send you a link to set a new one.",
+    sendLink: "Send the link",
+    linkSent: "If that address has an account, a link is on its way. Check your spam folder too.",
+    newPassword: "New password", savePassword: "Save password",
+    passwordSaved: "Password changed. You can sign in now.",
+    tooShort: "Use at least 8 characters.",
+
     /* transfers */
     myGarments: "Your garments", noGarments: "You have not claimed a garment yet.",
     hands: "hands", handsOne: "hand", claimedOn: "Claimed",
@@ -196,6 +205,15 @@ const STRINGS = {
     lookInstead: "Dai un'occhiata a cosa c'è disponibile.",
     registeredToYou: "Questo numero è registrato a te.",
     goesToOwner: "{amount} di questa vendita vanno a chi possiede questa maglia.",
+
+    forgot: "Password dimenticata?",
+    resetTitle: "Password",
+    resetNote: "Inserisci la tua email e ti mandiamo un link per impostarne una nuova.",
+    sendLink: "Invia il link",
+    linkSent: "Se esiste un account con quell'indirizzo, il link sta arrivando. Controlla anche lo spam.",
+    newPassword: "Nuova password", savePassword: "Salva password",
+    passwordSaved: "Password aggiornata. Ora puoi accedere.",
+    tooShort: "Usa almeno 8 caratteri.",
 
     myGarments: "I tuoi capi", noGarments: "Non hai ancora rivendicato un capo.",
     hands: "mani", handsOne: "mano", claimedOn: "Rivendicata",

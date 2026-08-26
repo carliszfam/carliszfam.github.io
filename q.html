@@ -100,6 +100,7 @@ async function viewClaim() {
         <div id="claimMsg"></div>
         <button class="btn" id="claimGo" style="margin-top:8px">${isUp ? t("createAndClaim") : t("signInAndClaim")}</button>
         <button class="btn btn-hollow" id="claimSwap" style="margin-top:8px">${isUp ? t("haveOne") : t("needOne")}</button>
+        ${isUp ? "" : `<a class="tag" href="./reset.html" style="display:block;text-align:center;margin-top:14px">${t("forgot")}</a>`}
       </div>`;
 
     document.getElementById("claimSwap").addEventListener("click", () => render(isUp ? "in" : "up"));
