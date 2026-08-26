@@ -69,7 +69,7 @@ export async function fetchProducts() {
 
   let variants = [];
   const { data: vs, error: vErr } = await sb.from("product_variants")
-    .select("id,product_id,size,sku,price_cents,stock,position,active")
+    .select("id,product_id,size,color,color_hex,sku,price_cents,stock,position,active")
     .in("product_id", products.map((p) => p.id));
   // A missing variants table must not take the whole shop down.
   if (vErr) console.warn("Variants unavailable, showing items unsized:", vErr.message);
@@ -200,9 +200,24 @@ export function renderRail(mount, { title, note, products }) {
 export function productCard(p) {
   const el = document.createElement("article");
   el.className = "card";
-  const sized = (p.variants || []).length > 0;
+  const vs = p.variants || [];
+  const colours = [...new Map(vs.filter((v) => v.color)
+    .map((v) => [v.color, v.color_hex || "#888"])).entries()];
+  const sized = vs.some((v) => v.size);
   const inStock = stockOf(p) > 0;
-  let chosen = sized ? (p.variants.find((v) => v.stock > 0) || null) : null;
+
+  // Start on the first colour that has anything left, then the first size in it.
+  let colour = colours.length
+    ? (colours.find(([c]) => vs.some((v) => v.color === c && v.stock > 0)) || colours[0])[0]
+    : null;
+  let chosen = null;
+
+  const sizesFor = (c) => vs.filter((v) => (c ? v.color === c : true));
+  const pickDefault = () => {
+    const pool = sizesFor(colour);
+    chosen = pool.find((v) => v.stock > 0) || pool[0] || null;
+  };
+  if (vs.length) pickDefault();
 
   el.innerHTML = `
     <div class="card-shot">${
@@ -213,30 +228,43 @@ export function productCard(p) {
       <span class="tag">${escapeHtml(p.sku)}</span>
       <span class="card-name">${escapeHtml(p.name)}</span>
       ${p.blurb ? `<p class="card-blurb">${escapeHtml(p.blurb)}</p>` : ""}
-      ${sized ? `<div class="size-row">${p.variants.map((v) => `
-        <button class="size" data-v="${v.id}" ${v.stock <= 0 ? "disabled" : ""}
-          aria-pressed="${chosen && chosen.id === v.id}"
-          title="${v.stock > 0 ? `${v.stock} left` : "Sold out"}">${escapeHtml(v.size)}</button>`).join("")}</div>` : ""}
+      ${colours.length ? `<div class="swatch-row" data-swatches></div>` : ""}
+      ${sized ? `<div class="size-row" data-sizes></div>` : ""}
       <div class="card-foot">
-        <span class="price ${inStock ? "" : "sold-out"}" data-price>${
-          inStock ? money(priceOf(p, chosen), p.currency) : "Sold out"}</span>
+        <span class="price ${inStock ? "" : "sold-out"}" data-price></span>
         <button class="btn btn-hollow btn-slim" data-add style="margin-left:auto" ${inStock ? "" : "disabled"}>Add</button>
       </div>
     </div>`;
 
   const priceEl = el.querySelector("[data-price]");
   const addBtn  = el.querySelector("[data-add]");
+  const swRow   = el.querySelector("[data-swatches]");
+  const szRow   = el.querySelector("[data-sizes]");
 
-  el.querySelectorAll(".size").forEach((b) =>
-    b.addEventListener("click", () => {
-      chosen = p.variants.find((v) => v.id === b.dataset.v);
-      el.querySelectorAll(".size").forEach((x) =>
-        x.setAttribute("aria-pressed", String(x === b)));
-      priceEl.textContent = money(priceOf(p, chosen), p.currency);
-    }));
+  function draw() {
+    if (swRow) swRow.innerHTML = colours.map(([c, hex]) => {
+      const left = vs.some((v) => v.color === c && v.stock > 0);
+      return `<button class="swatch" data-c="${escapeHtml(c)}" title="${escapeHtml(c)}${left ? "" : " — sold out"}"
+        aria-pressed="${c === colour}" ${left ? "" : "disabled"}
+        style="--sw:${escapeHtml(hex)}"><span class="sr">${escapeHtml(c)}</span></button>`;
+    }).join("");
+
+    if (szRow) szRow.innerHTML = sizesFor(colour).map((v) => `
+      <button class="size" data-v="${v.id}" ${v.stock <= 0 ? "disabled" : ""}
+        aria-pressed="${chosen && chosen.id === v.id}"
+        title="${v.stock > 0 ? `${v.stock} left` : "Sold out"}">${escapeHtml(v.size || "One size")}</button>`).join("");
+
+    priceEl.textContent = inStock ? money(priceOf(p, chosen), p.currency) : "Sold out";
+
+    swRow?.querySelectorAll(".swatch").forEach((b) =>
+      b.addEventListener("click", () => { colour = b.dataset.c; pickDefault(); draw(); }));
+    szRow?.querySelectorAll(".size").forEach((b) =>
+      b.addEventListener("click", () => { chosen = vs.find((v) => v.id === b.dataset.v); draw(); }));
+  }
+  draw();
 
   if (inStock) addBtn.addEventListener("click", () => {
-    if (sized && !chosen) { addBtn.textContent = "Pick a size"; setTimeout(() => (addBtn.textContent = "Add"), 1400); return; }
+    if (vs.length && !chosen) { addBtn.textContent = "Pick one"; setTimeout(() => (addBtn.textContent = "Add"), 1400); return; }
     addToCart(p.id, chosen?.id || null);
     addBtn.textContent = "Added";
     setTimeout(() => (addBtn.textContent = "Add"), 1100);

@@ -438,3 +438,40 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
 /* ---------- discount entry ---------- */
 .promo-row { display: flex; gap: 6px; margin-bottom: 12px; }
 .promo-row .input { flex: 1; text-transform: uppercase; }
+
+/* ---------- colour swatches ---------- */
+.swatch-row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 6px; }
+.swatch {
+  width: 22px; height: 22px; padding: 0; cursor: pointer;
+  border: 1px solid var(--rule); background: var(--sw, #888);
+  box-shadow: inset 0 0 0 2px var(--card);
+}
+.swatch:hover:not(:disabled) { border-color: var(--ink); }
+.swatch[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 2px var(--card), 0 0 0 1px var(--ink); }
+.swatch:disabled { opacity: 0.3; cursor: not-allowed; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- how it works ---------- */
+.how {
+  display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px;
+  align-items: center; padding: 50px 0 10px;
+  border-top: 1px solid var(--rule);
+}
+.how-shot { background: var(--card); border: 1px solid var(--rule); padding: 14px; }
+.how-shot img { width: 100%; height: auto; display: block; }
+
+.steps { list-style: none; margin: 18px 0 0; padding: 0; counter-reset: s; }
+.steps li {
+  display: grid; grid-template-columns: 46px 1fr; gap: 4px 14px;
+  padding: 14px 0; border-top: 1px solid var(--rule);
+}
+.steps li b {
+  grid-row: span 2; font-family: var(--tag-font); font-size: 1.05rem;
+  color: var(--bluing); font-weight: 600; letter-spacing: 0.02em;
+}
+.step-t { font-weight: 800; letter-spacing: -0.02em; font-size: 1.15rem; }
+.steps li p { margin: 0; color: var(--ink-soft); font-size: 0.92rem; }
+
+@media (max-width: 780px) {
+  .how { grid-template-columns: 1fr; gap: 24px; padding-top: 34px; }
+}
