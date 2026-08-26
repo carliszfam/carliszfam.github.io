@@ -105,8 +105,16 @@ export async function currentUser() {
   return user;
 }
 export const signIn  = (email, password) => sb.auth.signInWithPassword({ email, password });
-export const signUp  = (email, password, display_name) =>
-  sb.auth.signUp({ email, password, options: { data: { display_name } } });
+/* redirectTo brings a confirming visitor back where they started — which
+   matters on the scan page, where "where they started" is a specific shirt. */
+export const signUp = (email, password, display_name, redirectTo = null) =>
+  sb.auth.signUp({
+    email, password,
+    options: {
+      data: { display_name },
+      ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
+    },
+  });
 export const signOut = () => sb.auth.signOut();
 
 /* ---------------- checkout ----------------
