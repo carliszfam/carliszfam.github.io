@@ -15,5 +15,5 @@ window.SHOP_CONFIG = {
   // Absolute URL of the deployed site. Used to build QR targets and the
   // URLs Stripe returns to. No trailing slash.
   // For a repo named carliszfam.github.io, this is correct as written.
-  SITE_URL: "https://carliszfam.github.io",
+  SITE_URL: "https://carlisz.online",
 };
