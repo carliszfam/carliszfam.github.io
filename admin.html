@@ -390,6 +390,34 @@ async function wipeUnclaimed() {
   $("codeMsg").innerHTML = `<p class="notice">Deleted ${unclaimed} codes.</p>`;
 }
 
+/* Deleting a claimed code cuts a real garment loose: the label is already
+   sewn in, so that shirt can never be scanned again and its owner stops
+   earning from it. Two gates, the second one deliberately awkward.
+   Past payouts survive — the ledger keeps the rows and only loses the link. */
+async function deleteClaimedCode(code, serial) {
+  const first = confirm(
+    `${serial} is CLAIMED.\n\n` +
+    `Someone owns this garment. Deleting the code means:\n` +
+    `  · the QR sewn into that shirt stops working, permanently\n` +
+    `  · its owner earns nothing from it again\n` +
+    `  · credit already paid is kept, but loses its link to this garment\n\n` +
+    `There is no undo. Continue?`);
+  if (!first) return;
+
+  const typed = prompt(
+    `Second check.\n\nType the serial exactly to confirm deletion:\n${serial}`);
+  if (typed === null) return;
+  if (typed.trim().toLowerCase() !== serial.toLowerCase()) {
+    $("codeMsg").innerHTML = `<p class="notice notice-bad">That did not match ${escapeHtml(serial)}. Nothing was deleted.</p>`;
+    return;
+  }
+
+  const { error } = await sb.from("garment_codes").delete().eq("code", code);
+  if (error) { $("codeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  await loadCodes();
+  $("codeMsg").innerHTML = `<p class="notice notice-bad">Deleted ${escapeHtml(serial)}. That garment is now unscannable.</p>`;
+}
+
 async function deleteCode(code) {
   if (!confirm(`Delete ${code}? Only do this if the label was never printed.`)) return;
   const { error } = await sb.from("garment_codes").delete().eq("code", code).is("claimed_by", null);
@@ -417,10 +445,15 @@ function paintSheet() {
       <span class="redaction qr-brand">${escapeHtml(cfg.BRAND)}</span>
       <span class="serial">${escapeHtml(c.item_number)}</span>
       <span class="tag no-print" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>
-      ${c.claimed_by ? "" : `<button class="tab no-print" data-drop="${escapeHtml(c.code)}" style="padding:2px 6px;font-size:0.62rem">Delete</button>`}`;
+      ${c.claimed_by
+        ? `<button class="tab no-print danger" data-drop-claimed="${escapeHtml(c.code)}" data-serial="${escapeHtml(c.item_number)}" style="padding:2px 6px;font-size:0.62rem">Delete</button>`
+        : `<button class="tab no-print" data-drop="${escapeHtml(c.code)}" style="padding:2px 6px;font-size:0.62rem">Delete</button>`}`;
     sheet.appendChild(cell);
     const drop = cell.querySelector("[data-drop]");
     if (drop) drop.addEventListener("click", () => deleteCode(drop.dataset.drop));
+    const dropC = cell.querySelector("[data-drop-claimed]");
+    if (dropC) dropC.addEventListener("click", () =>
+      deleteClaimedCode(dropC.dataset.dropClaimed, dropC.dataset.serial));
     const url = `${cfg.SITE_URL}/q.html?i=${encodeURIComponent(c.item_number)}&c=${encodeURIComponent(c.code)}`;
     window.QRCode.toCanvas(cell.querySelector("canvas"), url,
       { width: 220, margin: 1, color: { dark: "#14161A", light: "#ffffff" } },

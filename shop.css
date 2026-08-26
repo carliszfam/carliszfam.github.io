@@ -393,3 +393,22 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
 @media (max-width: 640px) {
   .results-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }
+
+/* ---------- size selector ---------- */
+.size-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.size {
+  min-width: 34px; padding: 6px 8px;
+  font-family: var(--tag-font); font-size: 0.72rem; letter-spacing: 0.08em;
+  text-transform: uppercase; border: 1px solid var(--rule);
+  background: transparent; color: var(--ink); cursor: pointer;
+}
+.size:hover:not(:disabled) { border-color: var(--ink); }
+.size[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.size:disabled {
+  opacity: 0.32; cursor: not-allowed;
+  background: repeating-linear-gradient(135deg, transparent, transparent 3px, var(--rule) 3px, var(--rule) 4px);
+}
+
+/* an irreversible action should not look like the others */
+.tab.danger { color: var(--alert); }
+.tab.danger:hover { background: var(--alert); color: #fff; }
