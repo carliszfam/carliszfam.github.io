@@ -93,6 +93,13 @@ Deno.serve(async (req) => {
     const currency = lines[0].product.currency ?? "eur";
     const subtotal = lines.reduce((s, l) => s + l.unit * l.quantity, 0);
 
+    // A basket worth nothing means something is mispriced. Settling it would
+    // mark goods paid that nobody paid for, so refuse rather than guess.
+    if (subtotal <= 0) {
+      console.error("Refused zero-value basket:", JSON.stringify(items));
+      return json({ error: "That item is not priced yet. Please try again later." }, 409);
+    }
+
     // ---- store credit ---------------------------------------------------
     let creditApplied = 0;
     if (useCredit && userId) {
