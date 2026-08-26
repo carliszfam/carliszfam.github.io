@@ -111,7 +111,7 @@ export const signOut = () => sb.auth.signOut();
 /* ---------------- checkout ----------------
    The browser sends only product ids and quantities. Prices, credit
    and the referral payout are all recomputed server-side. */
-export async function startCheckout({ useCredit = false, email = null } = {}) {
+export async function startCheckout({ useCredit = false, email = null, discountCode = null } = {}) {
   const items = readCart();
   if (!items.length) throw new Error("Your bag is empty.");
 
@@ -128,6 +128,7 @@ export async function startCheckout({ useCredit = false, email = null } = {}) {
         product_id: l.product_id, variant_id: l.variant_id || null, quantity: l.qty })),
       referral_code: currentRef(),
       use_credit: useCredit,
+      discount_code: discountCode,
       email,
       return_url: CFG.SITE_URL,
     }),

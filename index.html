@@ -180,6 +180,7 @@ document.getElementById("cartChip").addEventListener("click", openDrawer);
 document.addEventListener("keydown", e => { if (e.key === "Escape") { closeDrawer(); closeModal(); } });
 
 let useCredit = false;
+let discount = null;   // { code, discount_cents } once validated
 
 async function paintCart() {
   const body = document.getElementById("drawerBody");
@@ -218,21 +219,49 @@ async function paintCart() {
     b.addEventListener("click", () => setQty(b.dataset.id, Number(b.dataset.q))));
 
   const subtotal = lines.reduce((s, l) => s + l.unit * l.qty, 0);
+
+  // a code stops applying if the basket drops below its minimum
+  if (discount) {
+    const { data } = await sb.rpc("check_discount", { p_code: discount.code, p_subtotal_cents: subtotal });
+    discount = data?.ok ? { code: data.code, discount_cents: data.discount_cents } : null;
+  }
+  const cut = discount?.discount_cents || 0;
+
   const user = await currentUser();
   const balance = user ? await fetchBalance() : 0;
-  const applied = useCredit ? Math.min(balance, subtotal) : 0;
+  const applied = useCredit ? Math.min(balance, subtotal - cut) : 0;
 
   foot.innerHTML = `
+    <div class="promo-row">
+      <input class="input" id="promo" placeholder="Discount code" value="${discount ? escapeHtml(discount.code) : ""}">
+      <button class="chip" id="promoGo">${discount ? "Remove" : "Apply"}</button>
+    </div>
+    <div id="promoMsg"></div>
     ${balance > 0 ? `
       <label class="credit-toggle">
         <input type="checkbox" id="useCredit" ${useCredit ? "checked" : ""}>
         <span class="tag" style="color:inherit">Use ${money(balance)} credit</span>
       </label>` : ""}
     <div class="total-row"><span class="tag">Subtotal</span><span class="price">${money(subtotal)}</span></div>
+    ${cut ? `<div class="total-row"><span class="tag">${escapeHtml(discount.code)}</span><span class="price">−${money(cut)}</span></div>` : ""}
     ${applied ? `<div class="total-row"><span class="tag">Credit</span><span class="price">−${money(applied)}</span></div>` : ""}
-    <div class="total-row grand"><span class="tag tag-ink">To pay</span><span class="price">${money(subtotal - applied)}</span></div>
+    <div class="total-row grand"><span class="tag tag-ink">To pay</span><span class="price">${money(subtotal - cut - applied)}</span></div>
     <div id="checkoutMsg"></div>
     <button class="btn" id="checkoutBtn" style="margin-top:14px">Checkout</button>`;
+
+  document.getElementById("promoGo").addEventListener("click", async () => {
+    const msg = document.getElementById("promoMsg");
+    if (discount) { discount = null; paintCart(); return; }
+    const code = document.getElementById("promo").value.trim();
+    if (!code) return;
+    const { data, error } = await sb.rpc("check_discount", { p_code: code, p_subtotal_cents: subtotal });
+    if (error || !data?.ok) {
+      msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(data?.error || "That code is not valid.")}</p>`;
+      return;
+    }
+    discount = { code: data.code, discount_cents: data.discount_cents };
+    paintCart();
+  });
 
   const toggle = document.getElementById("useCredit");
   if (toggle) toggle.addEventListener("change", () => { useCredit = toggle.checked; paintCart(); });
@@ -243,7 +272,7 @@ async function paintCart() {
     const email = user?.email || prompt("Email for your receipt:");
     if (!email) return;
     btn.disabled = true; btn.textContent = "Opening checkout…";
-    try { await startCheckout({ useCredit, email }); }
+    try { await startCheckout({ useCredit, email, discountCode: discount?.code || null }); }
     catch (err) {
       msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(err.message)}</p>`;
       btn.disabled = false; btn.textContent = "Checkout";

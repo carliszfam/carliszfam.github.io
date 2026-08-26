@@ -434,3 +434,7 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
 .ship-received    { color: var(--ink-soft); }
 
 @media (max-width: 700px) { .order-cols { grid-template-columns: 1fr; gap: 16px; } }
+
+/* ---------- discount entry ---------- */
+.promo-row { display: flex; gap: 6px; margin-bottom: 12px; }
+.promo-row .input { flex: 1; text-transform: uppercase; }

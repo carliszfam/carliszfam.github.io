@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
     const items: { product_id: string; variant_id?: string | null; quantity: number }[] = body.items ?? [];
     const referralCode: string | null = body.referral_code ?? null;
     const useCredit = Boolean(body.use_credit);
+    const discountCode: string | null = body.discount_code ?? null;
     const returnUrl: string = (body.return_url ?? "").replace(/\/$/, "");
 
     if (!items.length) return json({ error: "Your bag is empty." }, 400);
@@ -100,15 +101,31 @@ Deno.serve(async (req) => {
       return json({ error: "That item is not priced yet. Please try again later." }, 409);
     }
 
+    // ---- discount code ---------------------------------------------------
+    // Re-checked here even though the cart already previewed it: the browser's
+    // answer is a convenience, this one is the decision.
+    let discountCents = 0;
+    let validDiscount: string | null = null;
+    if (discountCode) {
+      const { data: d, error: dErr } = await admin.rpc("check_discount", {
+        p_code: discountCode, p_subtotal_cents: subtotal,
+      });
+      if (dErr) throw dErr;
+      if (!d?.ok) return json({ error: d?.error ?? "That code is not valid." }, 400);
+      discountCents = Math.max(0, Math.min(d.discount_cents, subtotal));
+      validDiscount = d.code;
+    }
+    const afterDiscount = subtotal - discountCents;
+
     // ---- store credit ---------------------------------------------------
     let creditApplied = 0;
     if (useCredit && userId) {
       const { data: ledger } = await admin
         .from("credit_ledger").select("delta_cents").eq("user_id", userId);
       const balance = (ledger ?? []).reduce((s: number, r: any) => s + r.delta_cents, 0);
-      creditApplied = Math.max(0, Math.min(balance, subtotal));
+      creditApplied = Math.max(0, Math.min(balance, afterDiscount));
     }
-    const total = subtotal - creditApplied;
+    const total = afterDiscount - creditApplied;
 
     // ---- a referral only counts if the garment has an owner -------------
     let validRef: string | null = null;
@@ -121,7 +138,8 @@ Deno.serve(async (req) => {
     // ---- record the order before taking any money -----------------------
     const { data: order, error: oErr } = await admin.from("orders").insert({
       user_id: userId, email, status: "pending",
-      subtotal_cents: subtotal, credit_applied_cents: creditApplied,
+      subtotal_cents: subtotal, discount_cents: discountCents,
+      discount_code: validDiscount, credit_applied_cents: creditApplied,
       total_cents: total, currency, referral_code: validRef,
     }).select().single();
     if (oErr) throw oErr;
@@ -146,9 +164,13 @@ Deno.serve(async (req) => {
     // Credit is applied as a one-off discount so the receipt shows the real
     // list prices and the reduction, rather than fudged unit prices.
     const discounts = [];
-    if (creditApplied > 0) {
+    const reduction = creditApplied + discountCents;
+    if (reduction > 0) {
+      const label = [discountCents > 0 ? validDiscount : null,
+                     creditApplied > 0 ? "store credit" : null]
+                    .filter(Boolean).join(" + ");
       const coupon = await stripe.coupons.create({
-        amount_off: creditApplied, currency, duration: "once", name: "Store credit",
+        amount_off: reduction, currency, duration: "once", name: label || "Discount",
       });
       discounts.push({ coupon: coupon.id });
     }
