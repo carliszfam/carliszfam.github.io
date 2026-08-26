@@ -9,7 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./shop.css">
 <script src="./config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<!-- 1.4.x is the last line that ships a prebuilt browser bundle; the
+     build/ folder was dropped from 1.5 onward, so newer tags 404 here. -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
 </head>
 <body>
 
@@ -271,6 +273,15 @@ function paintSheet() {
   const sheet = $("qrSheet");
   if (!sheet) return;
   sheet.innerHTML = "";
+
+  if (!window.QRCode) {
+    sheet.innerHTML = `<p class="notice notice-bad" style="grid-column:1/-1">
+      The QR library did not load, so the codes below cannot be drawn.
+      Check your connection and reload. The codes themselves are safely
+      stored — nothing was lost.</p>`;
+    return;
+  }
+
   CODES.slice(0, 120).forEach((c) => {
     const cell = document.createElement("div");
     cell.className = "qr-cell";
@@ -279,8 +290,9 @@ function paintSheet() {
       <span class="tag" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>`;
     sheet.appendChild(cell);
     const url = `${cfg.SITE_URL}/q.html?i=${encodeURIComponent(c.item_number)}&c=${encodeURIComponent(c.code)}`;
-    window.QRCode?.toCanvas(cell.querySelector("canvas"), url,
-      { width: 220, margin: 1, color: { dark: "#14161A", light: "#ffffff" } });
+    window.QRCode.toCanvas(cell.querySelector("canvas"), url,
+      { width: 220, margin: 1, color: { dark: "#14161A", light: "#ffffff" } },
+      (err) => { if (err) console.error("QR draw failed:", err); });
   });
 }
 
