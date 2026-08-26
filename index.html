@@ -20,14 +20,14 @@
     <div class="hero-label">
       <span class="tag">100% cotton · no logo · one serial per garment</span>
       <h1>Every shirt<br>has a number.</h1>
-      <p class="hero-lede">The code inside the hem belongs to whoever claims it first.
-         When someone else scans that shirt and buys, fifty cents lands in your balance.
-         Spend it back here.</p>
+      <p class="hero-lede">The number printed on the back belongs to whoever claims it first.
+         Every stranger who scans it in the street and buys sends fifty cents
+         to your balance. Spend it back here.</p>
       <div class="hero-rule">
         <span class="tag">Machine wash 30</span>
         <span class="tag">Do not bleach</span>
         <span class="tag">Tumble dry low</span>
-        <span class="tag tag-ink">Scan inside hem</span>
+        <span class="tag tag-ink">Scan the back</span>
       </div>
     </div>
     <div class="ticker" aria-hidden="true">
@@ -91,7 +91,7 @@ if (params.get("ref")) {
 }
 
 /* ticker */
-const words = ["No logo", "Serial numbered", "Claim your hem", "€0.50 per referral",
+const words = ["No logo", "Serial numbered", "Claim your number", "€0.50 per referral",
                "Small runs", "Machine wash 30", "Store credit, not cashback"];
 document.getElementById("ticker").innerHTML =
   [...words, ...words].map(w => `<span class="tag">${w}</span>`).join("");

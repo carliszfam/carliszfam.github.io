@@ -344,7 +344,7 @@ function paintCodes() {
       <div class="panel no-print">
         <div class="panel-head"><span class="tag tag-ink">Print a run</span></div>
         <p class="mini" style="color:var(--ink-soft);line-height:1.6">Each garment gets its own code.
-          Print the QR on the care label. Once someone claims it, later scans go straight to the shop.</p>
+          Print it large on the back — 8 cm or more, so it reads across a room. Once someone claims it, later scans go straight to the shop.</p>
         <label class="field"><span>Item</span>
           <select class="input" id="gProduct">
             ${ITEMS.map((p) => `<option value="${p.id}" data-sku="${escapeHtml(p.sku)}">${escapeHtml(p.name)}</option>`).join("")}
@@ -456,7 +456,8 @@ function paintSheet() {
       deleteClaimedCode(dropC.dataset.dropClaimed, dropC.dataset.serial));
     const url = `${cfg.SITE_URL}/q.html?i=${encodeURIComponent(c.item_number)}&c=${encodeURIComponent(c.code)}`;
     window.QRCode.toCanvas(cell.querySelector("canvas"), url,
-      { width: 220, margin: 1, color: { dark: "#14161A", light: "#ffffff" } },
+      { width: 320, margin: 1, errorCorrectionLevel: "H",
+        color: { dark: "#14161A", light: "#ffffff" } },
       (err) => { if (err) console.error("QR draw failed:", err); });
   });
 }
