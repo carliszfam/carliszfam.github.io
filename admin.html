@@ -483,36 +483,143 @@ async function generateCodes() {
   loadCodes();
 }
 
-/* ================= orders ================= */
+/* ================= orders =================
+   Payment and fulfilment are tracked separately, so a paid order sits in
+   the queue until you put it in a box. Each row opens to a packing list. */
+let ORDERS = [];
+let ORDER_FILTER = "topack";
+let OPEN_ORDER = null;
+
 async function loadOrders() {
-  const { data } = await sb.from("orders")
-    .select("id,email,status,subtotal_cents,credit_applied_cents,total_cents,referral_code,created_at")
-    .order("created_at", { ascending: false }).limit(100);
-  const rows = data || [];
-  const paid = rows.filter((o) => o.status === "paid");
+  const { data: orders } = await sb.from("orders")
+    .select("id,email,status,fulfillment,subtotal_cents,credit_applied_cents,total_cents,referral_code,tracking,ship_name,ship_address,created_at,shipped_at,received_at")
+    .order("created_at", { ascending: false }).limit(200);
+
+  const rows = orders || [];
+  let items = [];
+  if (rows.length) {
+    const { data } = await sb.from("order_items")
+      .select("order_id,name,size,quantity,unit_price_cents")
+      .in("order_id", rows.map((o) => o.id));
+    items = data || [];
+  }
+  ORDERS = rows.map((o) => ({ ...o, items: items.filter((i) => i.order_id === o.id) }));
+  paintOrders();
+}
+
+const FILTERS = [
+  ["topack",   "To pack"],
+  ["shipped",  "Shipped"],
+  ["received", "Received"],
+  ["all",      "All"],
+];
+
+function filterOrders() {
+  if (ORDER_FILTER === "all") return ORDERS;
+  if (ORDER_FILTER === "topack")
+    return ORDERS.filter((o) => o.status === "paid" && o.fulfillment === "unfulfilled");
+  return ORDERS.filter((o) => o.fulfillment === ORDER_FILTER);
+}
+
+function addressLines(o) {
+  const a = o.ship_address;
+  if (!a) return null;
+  return [o.ship_name, a.line1, a.line2, [a.postal_code, a.city].filter(Boolean).join(" "),
+          a.state, a.country].filter(Boolean);
+}
+
+function paintOrders() {
+  const rows = filterOrders();
+  const paid = ORDERS.filter((o) => o.status === "paid");
   const gross = paid.reduce((s, o) => s + o.subtotal_cents, 0);
+  const toPack = ORDERS.filter((o) => o.status === "paid" && o.fulfillment === "unfulfilled").length;
 
   $("tabOrders").innerHTML = `
     <div class="panel">
       <div class="panel-head">
         <span class="tag tag-ink">Orders</span>
-        <span class="tag">${paid.length} paid · ${money(gross)} gross</span>
+        <span class="tag">${paid.length} paid · ${money(gross)} gross · ${toPack} to pack</span>
       </div>
-      ${rows.length ? `
-      <table class="grid-table">
-        <thead><tr><th>When</th><th>Buyer</th><th>Status</th><th>Subtotal</th><th>Credit</th><th>Charged</th><th>Referral</th></tr></thead>
-        <tbody>${rows.map((o) => `
-          <tr>
-            <td class="mini">${new Date(o.created_at).toLocaleDateString(cfg.LOCALE)}</td>
-            <td class="mini">${escapeHtml(o.email || "—")}</td>
-            <td class="mini ${o.status === "paid" ? "" : "sold-out"}">${o.status}</td>
-            <td class="mini">${money(o.subtotal_cents)}</td>
-            <td class="mini">${o.credit_applied_cents ? "−" + money(o.credit_applied_cents) : "—"}</td>
-            <td class="mini">${money(o.total_cents)}</td>
-            <td class="mini">${escapeHtml(o.referral_code || "—")}</td>
-          </tr>`).join("")}</tbody>
-      </table>` : `<p class="empty">No orders yet.</p>`}
+      <div class="row" style="margin-bottom:16px">
+        ${FILTERS.map(([k, label]) =>
+          `<button class="chip ${ORDER_FILTER === k ? "tag-chip on" : ""}" data-filter="${k}">${label}</button>`).join("")}
+      </div>
+      <div id="orderMsg"></div>
+      ${rows.length ? rows.map(orderRow).join("") : `<p class="empty">Nothing here.</p>`}
     </div>`;
+
+  document.querySelectorAll("[data-filter]").forEach((b) =>
+    b.addEventListener("click", () => { ORDER_FILTER = b.dataset.filter; OPEN_ORDER = null; paintOrders(); }));
+  document.querySelectorAll("[data-open]").forEach((b) =>
+    b.addEventListener("click", () => {
+      OPEN_ORDER = OPEN_ORDER === b.dataset.open ? null : b.dataset.open; paintOrders();
+    }));
+  document.querySelectorAll("[data-mark]").forEach((b) =>
+    b.addEventListener("click", (e) => { e.stopPropagation(); markOrder(b.dataset.id, b.dataset.mark); }));
+}
+
+function orderRow(o) {
+  const open = OPEN_ORDER === o.id;
+  const badge = o.status !== "paid"
+    ? `<span class="mini sold-out">${escapeHtml(o.status)}</span>`
+    : `<span class="mini ship-${o.fulfillment}">${
+        o.fulfillment === "unfulfilled" ? "to pack" : escapeHtml(o.fulfillment)}</span>`;
+  const addr = addressLines(o);
+
+  return `
+    <div class="order-row ${open ? "open" : ""}">
+      <button class="order-head" data-open="${o.id}">
+        <span class="mini">${new Date(o.created_at).toLocaleDateString(cfg.LOCALE)}</span>
+        <span class="mini" style="flex:1;text-align:left">${escapeHtml(o.email || "—")}</span>
+        <span class="mini">${o.items.reduce((n, i) => n + i.quantity, 0)} pc</span>
+        <span class="price">${money(o.total_cents)}</span>
+        ${badge}
+      </button>
+      ${open ? `
+      <div class="order-body">
+        <div class="order-cols">
+          <div>
+            <span class="tag">Pack this</span>
+            <ul class="pack-list">${o.items.map((i) => `
+              <li><b>${i.quantity}&times;</b> ${escapeHtml(i.name)}${
+                i.size ? ` <span class="tag">size ${escapeHtml(i.size)}</span>` : ""}</li>`).join("")}</ul>
+          </div>
+          <div>
+            <span class="tag">Ship to</span>
+            ${addr
+              ? `<p class="mini" style="line-height:1.7;margin:6px 0 0">${addr.map(escapeHtml).join("<br>")}</p>`
+              : `<p class="mini sold-out" style="margin:6px 0 0">No address recorded. Look this order up in Stripe.</p>`}
+            ${o.referral_code ? `<p class="tag" style="margin-top:10px">Referred by ${escapeHtml(o.referral_code)}</p>` : ""}
+            ${o.tracking ? `<p class="tag" style="margin-top:10px">Tracking ${escapeHtml(o.tracking)}</p>` : ""}
+          </div>
+        </div>
+        ${o.status === "paid" ? `
+        <div class="row" style="margin-top:16px">
+          ${o.fulfillment === "unfulfilled"
+            ? `<button class="btn btn-slim" data-mark="shipped" data-id="${o.id}">Mark shipped</button>` : ""}
+          ${o.fulfillment === "shipped"
+            ? `<button class="btn btn-slim" data-mark="received" data-id="${o.id}">Mark received</button>` : ""}
+          ${o.fulfillment !== "unfulfilled"
+            ? `<button class="btn btn-hollow btn-slim" data-mark="unfulfilled" data-id="${o.id}">Undo</button>` : ""}
+        </div>` : `<p class="notice" style="margin-top:14px">Not paid, so nothing to send yet.</p>`}
+      </div>` : ""}
+    </div>`;
+}
+
+async function markOrder(id, state) {
+  const patch = { fulfillment: state };
+  if (state === "shipped") {
+    patch.shipped_at = new Date().toISOString();
+    const t = prompt("Tracking number, if you have one. Leave blank to skip.");
+    if (t === null) return;
+    if (t.trim()) patch.tracking = t.trim();
+  }
+  if (state === "received") patch.received_at = new Date().toISOString();
+  if (state === "unfulfilled") { patch.shipped_at = null; patch.received_at = null; }
+
+  const { error } = await sb.from("orders").update(patch).eq("id", id);
+  if (error) { $("orderMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  await loadOrders();
 }
 
 boot();

@@ -412,3 +412,25 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
 /* an irreversible action should not look like the others */
 .tab.danger { color: var(--alert); }
 .tab.danger:hover { background: var(--alert); color: #fff; }
+
+/* ---------- order queue ---------- */
+.order-row { border-bottom: 1px solid var(--rule); }
+.order-row.open { background: var(--card); }
+.order-head {
+  width: 100%; display: flex; align-items: center; gap: 14px;
+  padding: 12px 10px; background: none; border: none; cursor: pointer;
+  text-align: left; font-family: inherit; color: var(--ink);
+}
+.order-head:hover { background: var(--card); }
+.order-body { padding: 4px 10px 20px; }
+.order-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+.pack-list { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.9rem; }
+.pack-list li { padding: 5px 0; border-bottom: 1px dotted var(--rule); }
+.pack-list b { font-family: var(--tag-font); }
+
+.ship-unfulfilled { color: var(--alert); }
+.ship-shipped     { color: var(--bluing); }
+.ship-received    { color: var(--ink-soft); }
+
+@media (max-width: 700px) { .order-cols { grid-template-columns: 1fr; gap: 16px; } }
