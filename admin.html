@@ -104,7 +104,7 @@ let editing = null;
 
 async function loadItems() {
   const { data, error } = await sb.from("products")
-    .select("*, variants:product_variants(id,size,sku,price_cents,stock,position,active)")
+    .select("*, variants:product_variants(id,size,color,color_hex,sku,price_cents,stock,position,active)")
     .order("collection").order("position");
   if (error) { $("tabItems").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
   ITEMS = (data || []).map((p) => ({
@@ -131,6 +131,8 @@ function paintItems() {
           <label class="field" style="flex:1"><span>Rail</span><input class="input" id="fColl" value="shirts"></label>
           <label class="field" style="width:90px"><span>Order</span><input class="input" id="fPos" type="number" value="0"></label>
         </div>
+        <label class="field"><span>Name (Italian)</span><input class="input" id="fNameIt" placeholder="optional"></label>
+        <label class="field"><span>Description (Italian)</span><textarea class="input" id="fBlurbIt" rows="2"></textarea></label>
         <label class="field"><span>Keywords</span><input class="input" id="fKeys" placeholder="chilli, calabria, cotton"></label>
         <label class="field"><span>Photo</span><input class="input" id="fFile" type="file" accept="image/*"></label>
         <label class="field"><span>or image url</span><input class="input" id="fImg" placeholder="https://…"></label>
@@ -155,11 +157,11 @@ function paintItems() {
                 p.keywords?.length ? `<br><span style="color:var(--ink-soft)">${escapeHtml(p.keywords.join(" · "))}</span>` : ""}</td>
               <td class="mini">${money(p.price_cents, p.currency)}</td>
               <td class="mini">${p.variants?.length
-                ? p.variants.map((v) => `${escapeHtml(v.size)}&nbsp;${v.stock}`).join("<br>")
+                ? p.variants.map((v) => `${escapeHtml([v.color, v.size].filter(Boolean).join(" "))}&nbsp;${v.stock}`).join("<br>")
                 : p.stock}</td>
               <td class="row">
                 <button class="tab" data-edit="${p.id}" style="padding:2px 6px">Edit</button>
-                <button class="tab" data-sizes="${p.id}" style="padding:2px 6px">Sizes</button>
+                <button class="tab" data-sizes="${p.id}" style="padding:2px 6px">Variants</button>
                 <button class="tab" data-del="${p.id}" style="padding:2px 6px">Delete</button>
               </td>
             </tr>`).join("")}</tbody>
@@ -173,6 +175,7 @@ function paintItems() {
     $("fStock").value = editing.stock; $("fColl").value = editing.collection;
     $("fPos").value = editing.position; $("fImg").value = editing.image_url || "";
     $("fKeys").value = (editing.keywords || []).join(", ");
+    $("fNameIt").value = editing.name_it || ""; $("fBlurbIt").value = editing.blurb_it || "";
     $("fActive").checked = editing.active;
     $("cancelEdit").addEventListener("click", () => { editing = null; paintItems(); });
   }
@@ -201,24 +204,35 @@ function openSizes(product) {
   const rows = product.variants || [];
   modalOpen(`
     <span class="tag">${escapeHtml(product.sku)}</span>
-    <h2 style="margin:8px 0 4px">Sizes</h2>
+    <h2 style="margin:8px 0 4px">Colours &amp; sizes</h2>
     <p class="mini" style="color:var(--ink-soft);margin:0 0 16px">
       Leave the price blank to use the item price of ${money(product.price_cents, product.currency)}.
       Remove every size to sell this item unsized.</p>
     <table class="grid-table" id="sizeTable">
-      <thead><tr><th>Size</th><th>Stock</th><th>Price</th><th></th></tr></thead>
+      <thead><tr><th>Colour</th><th>Size</th><th>Stock</th><th>Price</th><th></th></tr></thead>
       <tbody>${rows.map((v) => `
         <tr data-vid="${v.id}">
-          <td><input class="input" style="width:70px" data-f="size" value="${escapeHtml(v.size)}"></td>
+          <td class="row" style="gap:4px">
+            <input class="input" style="width:76px" data-f="color" value="${escapeHtml(v.color || "")}" placeholder="—">
+            <input type="color" data-f="color_hex" value="${escapeHtml(v.color_hex || "#111111")}" style="width:30px;height:30px;border:1px solid var(--rule);padding:0;background:none">
+          </td>
+          <td><input class="input" style="width:64px" data-f="size" value="${escapeHtml(v.size || "")}"></td>
           <td><input class="input" style="width:70px" type="number" min="0" data-f="stock" value="${v.stock}"></td>
           <td><input class="input" style="width:90px" type="number" step="0.01" min="0" data-f="price"
                      value="${v.price_cents != null ? (v.price_cents / 100).toFixed(2) : ""}" placeholder="—"></td>
           <td><button class="tab" data-drop-v="${v.id}" style="padding:2px 6px">Remove</button></td>
         </tr>`).join("")}</tbody>
     </table>
-    <div class="row" style="margin:16px 0">
+    <div class="row" style="margin:16px 0 6px">
+      <input class="input" id="newColour" placeholder="Colour to add, e.g. Black" style="flex:1">
+      <input type="color" id="newHex" value="#111111" style="width:34px;height:34px;border:1px solid var(--rule);padding:0;background:none">
+    </div>
+    <div class="row" style="margin:0 0 16px">
       ${SIZE_PRESET.map((z) => `<button class="chip" data-add-size="${z}">+ ${z}</button>`).join("")}
     </div>
+    <p class="mini" style="color:var(--ink-soft);margin:0 0 14px">
+      Type a colour, then click a size to add that pairing. Leave the colour blank for
+      an item that comes in one colour.</p>
     <div id="sizeMsg"></div>
     <button class="btn" id="sizeSave">Save sizes</button>`);
 
@@ -235,11 +249,13 @@ function openSizes(product) {
 }
 
 async function addSizeRow(product, size) {
-  if ((product.variants || []).some((v) => v.size === size)) return;
+  const colour = document.getElementById("newColour")?.value.trim() || null;
+  const hex    = document.getElementById("newHex")?.value || null;
+  if ((product.variants || []).some((v) => v.size === size && (v.color || null) === colour)) return;
   const { error } = await sb.from("product_variants").insert({
-    product_id: product.id, size, stock: 0,
+    product_id: product.id, size, color: colour, color_hex: colour ? hex : null, stock: 0,
     position: SIZE_PRESET.indexOf(size),
-    sku: `${product.sku}-${size}`,
+    sku: [product.sku, colour, size].filter(Boolean).join("-").toUpperCase().replace(/\s+/g, ""),
   });
   if (error) { document.getElementById("sizeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
   await loadItems();
@@ -251,9 +267,12 @@ async function saveSizes(product) {
   const updates = [...document.querySelectorAll("#sizeTable tbody tr")].map((tr) => {
     const val = (f) => tr.querySelector(`[data-f="${f}"]`).value.trim();
     const price = val("price");
+    const colour = val("color");
     return {
       id: tr.dataset.vid,
-      size: val("size"),
+      size: val("size") || null,
+      color: colour || null,
+      color_hex: colour ? val("color_hex") : null,
       stock: parseInt(val("stock") || "0", 10),
       price_cents: price === "" ? null : Math.round(parseFloat(price) * 100),
     };
@@ -306,6 +325,8 @@ async function saveItem() {
     position: parseInt($("fPos").value || "0", 10),
     active: $("fActive").checked,
     currency: cfg.CURRENCY,
+    name_it: $("fNameIt").value.trim() || null,
+    blurb_it: $("fBlurbIt").value.trim() || null,
     keywords: [...new Set($("fKeys").value.split(",")
       .map((k) => k.trim().toLowerCase()).filter(Boolean))],
   };

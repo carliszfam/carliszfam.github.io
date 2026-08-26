@@ -18,18 +18,19 @@
 
 <main class="shell">
   <div class="pane" id="pane">
-    <span class="tag">Order</span>
-    <h2 style="margin:12px 0 10px">Thank you.</h2>
-    <p class="hero-lede">Your order is in. A receipt is on its way to your inbox.</p>
+    <span class="tag" data-i="order"></span>
+    <h2 style="margin:12px 0 10px" data-i="thankYou"></h2>
+    <p class="hero-lede" data-i="orderIn"></p>
     <div id="detail"></div>
-    <a class="btn" href="./index.html" style="margin-top:24px">Back to the shop</a>
+    <a class="btn" href="./index.html" style="margin-top:24px" data-i="backToShop"></a>
   </div>
 </main>
 
 <script type="module">
-import { cfg, sb, money, escapeHtml, clearCart, currentUser, fetchBalance } from "./shop.js";
+import { cfg, sb, money, escapeHtml, clearCart, currentUser, fetchBalance, t } from "./shop.js";
 
 document.getElementById("brand").textContent = cfg.BRAND;
+document.querySelectorAll("[data-i]").forEach((el) => { el.textContent = t(el.dataset.i); });
 clearCart();
 
 const orderId = new URLSearchParams(location.search).get("order");
@@ -46,16 +47,16 @@ if (orderId) {
       if (data?.status === "paid") {
         const balance = await fetchBalance();
         detail.innerHTML = `
-          <div class="total-row" style="margin-top:20px"><span class="tag">Paid</span><span class="price">${money(data.total_cents)}</span></div>
-          ${data.credit_applied_cents ? `<div class="total-row"><span class="tag">Credit used</span><span class="price">−${money(data.credit_applied_cents)}</span></div>` : ""}
-          <div class="total-row"><span class="tag">Balance left</span><span class="price">${money(balance)}</span></div>`;
+          <div class="total-row" style="margin-top:20px"><span class="tag">${t("paid")}</span><span class="price">${money(data.total_cents)}</span></div>
+          ${data.credit_applied_cents ? `<div class="total-row"><span class="tag">${t("creditUsed")}</span><span class="price">−${money(data.credit_applied_cents)}</span></div>` : ""}
+          <div class="total-row"><span class="tag">${t("balanceLeft")}</span><span class="price">${money(balance)}</span></div>`;
         break;
       }
       await new Promise((r) => setTimeout(r, 1200));
     }
   }
   detail.insertAdjacentHTML("beforeend",
-    `<p class="tag" style="margin-top:18px">Reference ${escapeHtml(orderId.slice(0, 8))}</p>`);
+    `<p class="tag" style="margin-top:18px">${t("reference")} ${escapeHtml(orderId.slice(0, 8))}</p>`);
 }
 </script>
 </body>

@@ -475,3 +475,13 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
 @media (max-width: 780px) {
   .how { grid-template-columns: 1fr; gap: 24px; padding-top: 34px; }
 }
+
+/* ---------- language switch ---------- */
+.lang-switch { display: inline-flex; border: 1px solid var(--rule); }
+.lang {
+  padding: 7px 9px; border: none; background: transparent; cursor: pointer;
+  font-family: var(--tag-font); font-size: var(--step);
+  letter-spacing: 0.1em; color: var(--ink-soft);
+}
+.lang:hover { color: var(--ink); }
+.lang.on { background: var(--ink); color: var(--paper); }

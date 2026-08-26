@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { LANG, LANGS, setLang, t } from "./i18n.js";
 
 const CFG = window.SHOP_CONFIG;
 export const sb = createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
@@ -6,7 +7,7 @@ export const cfg = CFG;
 
 /* ---------------- money ---------------- */
 export const money = (cents, cur = CFG.CURRENCY) =>
-  new Intl.NumberFormat(CFG.LOCALE, { style: "currency", currency: cur.toUpperCase() })
+  new Intl.NumberFormat(LANG === "it" ? "it-IT" : CFG.LOCALE, { style: "currency", currency: cur.toUpperCase() })
     .format((cents || 0) / 100);
 
 /* ---------------- referral code ----------------
@@ -148,11 +149,15 @@ export function mountMasthead(el, { active = "" } = {}) {
     <div class="masthead-in">
       <a class="redaction" href="./index.html">${CFG.BRAND}</a>
       <nav class="masthead-nav">
-        <span class="chip chip-credit hide" id="creditChip">Credit <b id="creditVal">—</b></span>
-        <button class="chip" id="accountChip">Account</button>
-        <button class="chip chip-cart" id="cartChip">Bag <span id="cartCount">0</span></button>
+        <span class="lang-switch">${Object.entries(LANGS).map(([code, label]) =>
+          `<button class="lang ${code === LANG ? "on" : ""}" data-lang="${code}">${label}</button>`).join("")}</span>
+        <span class="chip chip-credit hide" id="creditChip">${t("credit")} <b id="creditVal">—</b></span>
+        <button class="chip" id="accountChip">${t("account")}</button>
+        <button class="chip chip-cart" id="cartChip">${t("bag")} <span id="cartCount">0</span></button>
       </nav>
     </div>`;
+  el.querySelectorAll("[data-lang]").forEach((b) =>
+    b.addEventListener("click", () => setLang(b.dataset.lang)));
   el.dataset.active = active;
 }
 
@@ -222,17 +227,17 @@ export function productCard(p) {
   el.innerHTML = `
     <div class="card-shot">${
       p.image_url
-        ? `<img src="${p.image_url}" alt="${escapeHtml(p.name)}" loading="lazy">`
+        ? `<img src="${p.image_url}" alt="${escapeHtml(nameOf(p))}" loading="lazy">`
         : `<span class="redaction redaction-lg">${cfg.BRAND}</span>`}</div>
     <div class="card-body">
       <span class="tag">${escapeHtml(p.sku)}</span>
-      <span class="card-name">${escapeHtml(p.name)}</span>
-      ${p.blurb ? `<p class="card-blurb">${escapeHtml(p.blurb)}</p>` : ""}
+      <span class="card-name">${escapeHtml(nameOf(p))}</span>
+      ${blurbOf(p) ? `<p class="card-blurb">${escapeHtml(blurbOf(p))}</p>` : ""}
       ${colours.length ? `<div class="swatch-row" data-swatches></div>` : ""}
       ${sized ? `<div class="size-row" data-sizes></div>` : ""}
       <div class="card-foot">
         <span class="price ${inStock ? "" : "sold-out"}" data-price></span>
-        <button class="btn btn-hollow btn-slim" data-add style="margin-left:auto" ${inStock ? "" : "disabled"}>Add</button>
+        <button class="btn btn-hollow btn-slim" data-add style="margin-left:auto" ${inStock ? "" : "disabled"}>${t("add")}</button>
       </div>
     </div>`;
 
@@ -244,7 +249,7 @@ export function productCard(p) {
   function draw() {
     if (swRow) swRow.innerHTML = colours.map(([c, hex]) => {
       const left = vs.some((v) => v.color === c && v.stock > 0);
-      return `<button class="swatch" data-c="${escapeHtml(c)}" title="${escapeHtml(c)}${left ? "" : " — sold out"}"
+      return `<button class="swatch" data-c="${escapeHtml(c)}" title="${escapeHtml(c)}${left ? "" : " — " + t("soldOut")}"
         aria-pressed="${c === colour}" ${left ? "" : "disabled"}
         style="--sw:${escapeHtml(hex)}"><span class="sr">${escapeHtml(c)}</span></button>`;
     }).join("");
@@ -252,9 +257,9 @@ export function productCard(p) {
     if (szRow) szRow.innerHTML = sizesFor(colour).map((v) => `
       <button class="size" data-v="${v.id}" ${v.stock <= 0 ? "disabled" : ""}
         aria-pressed="${chosen && chosen.id === v.id}"
-        title="${v.stock > 0 ? `${v.stock} left` : "Sold out"}">${escapeHtml(v.size || "One size")}</button>`).join("");
+        title="${v.stock > 0 ? `${v.stock} ${t("left")}` : t("soldOut")}">${escapeHtml(v.size || t("oneSize"))}</button>`).join("");
 
-    priceEl.textContent = inStock ? money(priceOf(p, chosen), p.currency) : "Sold out";
+    priceEl.textContent = inStock ? money(priceOf(p, chosen), p.currency) : t("soldOut");
 
     swRow?.querySelectorAll(".swatch").forEach((b) =>
       b.addEventListener("click", () => { colour = b.dataset.c; pickDefault(); draw(); }));
@@ -264,14 +269,18 @@ export function productCard(p) {
   draw();
 
   if (inStock) addBtn.addEventListener("click", () => {
-    if (vs.length && !chosen) { addBtn.textContent = "Pick one"; setTimeout(() => (addBtn.textContent = "Add"), 1400); return; }
+    if (vs.length && !chosen) { addBtn.textContent = t("pickOne"); setTimeout(() => (addBtn.textContent = t("add")), 1400); return; }
     addToCart(p.id, chosen?.id || null);
-    addBtn.textContent = "Added";
-    setTimeout(() => (addBtn.textContent = "Add"), 1100);
+    addBtn.textContent = t("added");
+    setTimeout(() => (addBtn.textContent = t("add")), 1100);
   });
 
   return el;
 }
+
+/* Product copy falls back to the original when a translation is missing. */
+export const nameOf  = (p) => (LANG === "it" && p.name_it)  ? p.name_it  : p.name;
+export const blurbOf = (p) => (LANG === "it" && p.blurb_it) ? p.blurb_it : p.blurb;
 
 /* ---------------- search ----------------
    The catalogue is already in memory, so filtering happens in the browser:
@@ -280,7 +289,7 @@ export function productCard(p) {
 export function matchesQuery(p, query) {
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return true;
-  const hay = [p.name, p.sku, p.blurb, p.collection, ...(p.keywords || [])]
+  const hay = [p.name, p.name_it, p.sku, p.blurb, p.blurb_it, p.collection, ...(p.keywords || [])]
     .filter(Boolean).join(" ").toLowerCase();
   return terms.every((t) => hay.includes(t));
 }
@@ -291,6 +300,8 @@ export function allKeywords(products) {
     for (const k of p.keywords || []) seen.set(k, (seen.get(k) || 0) + 1);
   return [...seen.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
+
+export { t, LANG, LANGS, setLang };
 
 export const escapeHtml = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
