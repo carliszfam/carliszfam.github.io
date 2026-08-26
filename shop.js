@@ -34,16 +34,22 @@ const writeCart = (c) => {
   localStorage.setItem(CART_KEY, JSON.stringify(c));
   document.dispatchEvent(new CustomEvent("cart:changed"));
 };
-export function addToCart(productId, qty = 1) {
+/* A line is identified by its variant when the product has sizes, and by
+   the product itself when it doesn't. Two sizes of one shirt are two lines. */
+export const lineKey = (l) => l.variant_id || l.product_id;
+
+export function addToCart(productId, variantId = null, qty = 1) {
   const cart = readCart();
-  const hit = cart.find((l) => l.product_id === productId);
-  if (hit) hit.qty += qty; else cart.push({ product_id: productId, qty });
+  const key = variantId || productId;
+  const hit = cart.find((l) => lineKey(l) === key);
+  if (hit) hit.qty += qty;
+  else cart.push({ product_id: productId, variant_id: variantId, qty });
   writeCart(cart);
 }
-export function setQty(productId, qty) {
+export function setQty(key, qty) {
   let cart = readCart();
-  if (qty <= 0) cart = cart.filter((l) => l.product_id !== productId);
-  else { const hit = cart.find((l) => l.product_id === productId); if (hit) hit.qty = qty; }
+  if (qty <= 0) cart = cart.filter((l) => lineKey(l) !== key);
+  else { const hit = cart.find((l) => lineKey(l) === key); if (hit) hit.qty = qty; }
   writeCart(cart);
 }
 export const clearCart = () => writeCart([]);
@@ -52,11 +58,24 @@ export const cartCount = () => readCart().reduce((n, l) => n + l.qty, 0);
 /* ---------------- data ---------------- */
 export async function fetchProducts() {
   const { data, error } = await sb.from("products")
-    .select("*").eq("active", true)
+    .select("*, variants:product_variants(id,size,sku,price_cents,stock,position,active)")
+    .eq("active", true)
     .order("collection").order("position").order("created_at");
   if (error) throw error;
-  return data || [];
+  return (data || []).map((p) => ({
+    ...p,
+    variants: (p.variants || [])
+      .filter((v) => v.active)
+      .sort((a, b) => a.position - b.position),
+  }));
 }
+
+/* A variant may override the price; otherwise it inherits. */
+export const priceOf = (p, v) => (v && v.price_cents != null ? v.price_cents : p.price_cents);
+
+/* Total stock across sizes, or the product's own when it has none. */
+export const stockOf = (p) =>
+  p.variants?.length ? p.variants.reduce((n, v) => n + v.stock, 0) : p.stock;
 
 export async function fetchBalance() {
   const { data: { session } } = await sb.auth.getSession();
@@ -92,7 +111,8 @@ export async function startCheckout({ useCredit = false, email = null } = {}) {
       Authorization: `Bearer ${session?.access_token || CFG.SUPABASE_KEY}`,
     },
     body: JSON.stringify({
-      items: items.map((l) => ({ product_id: l.product_id, quantity: l.qty })),
+      items: items.map((l) => ({
+        product_id: l.product_id, variant_id: l.variant_id || null, quantity: l.qty })),
       referral_code: currentRef(),
       use_credit: useCredit,
       email,
@@ -166,7 +186,10 @@ export function renderRail(mount, { title, note, products }) {
 export function productCard(p) {
   const el = document.createElement("article");
   el.className = "card";
-  const out = p.stock <= 0;
+  const sized = (p.variants || []).length > 0;
+  const inStock = stockOf(p) > 0;
+  let chosen = sized ? (p.variants.find((v) => v.stock > 0) || null) : null;
+
   el.innerHTML = `
     <div class="card-shot">${
       p.image_url
@@ -176,37 +199,36 @@ export function productCard(p) {
       <span class="tag">${escapeHtml(p.sku)}</span>
       <span class="card-name">${escapeHtml(p.name)}</span>
       ${p.blurb ? `<p class="card-blurb">${escapeHtml(p.blurb)}</p>` : ""}
+      ${sized ? `<div class="size-row">${p.variants.map((v) => `
+        <button class="size" data-v="${v.id}" ${v.stock <= 0 ? "disabled" : ""}
+          aria-pressed="${chosen && chosen.id === v.id}"
+          title="${v.stock > 0 ? `${v.stock} left` : "Sold out"}">${escapeHtml(v.size)}</button>`).join("")}</div>` : ""}
       <div class="card-foot">
-        <span class="price ${out ? "sold-out" : ""}">${out ? "Sold out" : money(p.price_cents, p.currency)}</span>
-        <button class="btn btn-hollow btn-slim" style="margin-left:auto" ${out ? "disabled" : ""}>Add</button>
+        <span class="price ${inStock ? "" : "sold-out"}" data-price>${
+          inStock ? money(priceOf(p, chosen), p.currency) : "Sold out"}</span>
+        <button class="btn btn-hollow btn-slim" data-add style="margin-left:auto" ${inStock ? "" : "disabled"}>Add</button>
       </div>
     </div>`;
-  const btn = el.querySelector("button");
-  if (!out) btn.addEventListener("click", () => {
-    addToCart(p.id);
-    btn.textContent = "Added";
-    setTimeout(() => (btn.textContent = "Add"), 1100);
+
+  const priceEl = el.querySelector("[data-price]");
+  const addBtn  = el.querySelector("[data-add]");
+
+  el.querySelectorAll(".size").forEach((b) =>
+    b.addEventListener("click", () => {
+      chosen = p.variants.find((v) => v.id === b.dataset.v);
+      el.querySelectorAll(".size").forEach((x) =>
+        x.setAttribute("aria-pressed", String(x === b)));
+      priceEl.textContent = money(priceOf(p, chosen), p.currency);
+    }));
+
+  if (inStock) addBtn.addEventListener("click", () => {
+    if (sized && !chosen) { addBtn.textContent = "Pick a size"; setTimeout(() => (addBtn.textContent = "Add"), 1400); return; }
+    addToCart(p.id, chosen?.id || null);
+    addBtn.textContent = "Added";
+    setTimeout(() => (addBtn.textContent = "Add"), 1100);
   });
+
   return el;
-}
-
-/* ---------------- search ----------------
-   The catalogue is already in memory, so filtering happens in the browser:
-   instant, no round trip, and it works while offline. If the catalogue ever
-   outgrows that, move this to a Postgres query against the GIN index. */
-export function matchesQuery(p, query) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return true;
-  const hay = [p.name, p.sku, p.blurb, p.collection, ...(p.keywords || [])]
-    .filter(Boolean).join(" ").toLowerCase();
-  return terms.every((t) => hay.includes(t));
-}
-
-export function allKeywords(products) {
-  const seen = new Map();
-  for (const p of products)
-    for (const k of p.keywords || []) seen.set(k, (seen.get(k) || 0) + 1);
-  return [...seen.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 }
 
 export const escapeHtml = (s) =>

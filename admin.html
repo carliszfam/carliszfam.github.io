@@ -101,9 +101,12 @@ let ITEMS = [];
 let editing = null;
 
 async function loadItems() {
-  const { data, error } = await sb.from("products").select("*").order("collection").order("position");
+  const { data, error } = await sb.from("products")
+    .select("*, variants:product_variants(id,size,sku,price_cents,stock,position,active)")
+    .order("collection").order("position");
   if (error) { $("tabItems").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
-  ITEMS = data || [];
+  ITEMS = (data || []).map((p) => ({
+    ...p, variants: (p.variants || []).sort((a, b) => a.position - b.position) }));
   paintItems();
 }
 
@@ -149,9 +152,12 @@ function paintItems() {
               <td class="mini">${escapeHtml(p.collection)}${
                 p.keywords?.length ? `<br><span style="color:var(--ink-soft)">${escapeHtml(p.keywords.join(" · "))}</span>` : ""}</td>
               <td class="mini">${money(p.price_cents, p.currency)}</td>
-              <td class="mini">${p.stock}</td>
+              <td class="mini">${p.variants?.length
+                ? p.variants.map((v) => `${escapeHtml(v.size)}&nbsp;${v.stock}`).join("<br>")
+                : p.stock}</td>
               <td class="row">
                 <button class="tab" data-edit="${p.id}" style="padding:2px 6px">Edit</button>
+                <button class="tab" data-sizes="${p.id}" style="padding:2px 6px">Sizes</button>
                 <button class="tab" data-del="${p.id}" style="padding:2px 6px">Delete</button>
               </td>
             </tr>`).join("")}</tbody>
@@ -172,12 +178,106 @@ function paintItems() {
   $("saveItem").addEventListener("click", saveItem);
   document.querySelectorAll("[data-edit]").forEach((b) =>
     b.addEventListener("click", () => { editing = ITEMS.find((p) => p.id === b.dataset.edit); paintItems(); window.scrollTo({ top: 0, behavior: "smooth" }); }));
+  document.querySelectorAll("[data-sizes]").forEach((b) =>
+    b.addEventListener("click", () => openSizes(ITEMS.find((p) => p.id === b.dataset.sizes))));
   document.querySelectorAll("[data-del]").forEach((b) =>
     b.addEventListener("click", async () => {
       if (!confirm("Delete this item? Orders that include it are kept.")) return;
       await sb.from("products").delete().eq("id", b.dataset.del);
       loadItems();
     }));
+}
+
+/* ---------------- size editor ----------------
+   Sizes live in their own table, so a shirt can run out of M while L
+   stays on the shelf. A product with no rows here behaves as before:
+   one price, one stock figure, no size picker in the shop. */
+const SIZE_PRESET = ["XS", "S", "M", "L", "XL", "XXL"];
+
+function openSizes(product) {
+  if (!product) return;
+  const rows = product.variants || [];
+  modalOpen(`
+    <span class="tag">${escapeHtml(product.sku)}</span>
+    <h2 style="margin:8px 0 4px">Sizes</h2>
+    <p class="mini" style="color:var(--ink-soft);margin:0 0 16px">
+      Leave the price blank to use the item price of ${money(product.price_cents, product.currency)}.
+      Remove every size to sell this item unsized.</p>
+    <table class="grid-table" id="sizeTable">
+      <thead><tr><th>Size</th><th>Stock</th><th>Price</th><th></th></tr></thead>
+      <tbody>${rows.map((v) => `
+        <tr data-vid="${v.id}">
+          <td><input class="input" style="width:70px" data-f="size" value="${escapeHtml(v.size)}"></td>
+          <td><input class="input" style="width:70px" type="number" min="0" data-f="stock" value="${v.stock}"></td>
+          <td><input class="input" style="width:90px" type="number" step="0.01" min="0" data-f="price"
+                     value="${v.price_cents != null ? (v.price_cents / 100).toFixed(2) : ""}" placeholder="—"></td>
+          <td><button class="tab" data-drop-v="${v.id}" style="padding:2px 6px">Remove</button></td>
+        </tr>`).join("")}</tbody>
+    </table>
+    <div class="row" style="margin:16px 0">
+      ${SIZE_PRESET.map((z) => `<button class="chip" data-add-size="${z}">+ ${z}</button>`).join("")}
+    </div>
+    <div id="sizeMsg"></div>
+    <button class="btn" id="sizeSave">Save sizes</button>`);
+
+  document.querySelectorAll("[data-add-size]").forEach((b) =>
+    b.addEventListener("click", () => addSizeRow(product, b.dataset.addSize)));
+  document.querySelectorAll("[data-drop-v]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm("Remove this size? Past orders keep their record.")) return;
+      await sb.from("product_variants").delete().eq("id", b.dataset.dropV);
+      await loadItems();
+      openSizes(ITEMS.find((x) => x.id === product.id));
+    }));
+  document.getElementById("sizeSave").addEventListener("click", () => saveSizes(product));
+}
+
+async function addSizeRow(product, size) {
+  if ((product.variants || []).some((v) => v.size === size)) return;
+  const { error } = await sb.from("product_variants").insert({
+    product_id: product.id, size, stock: 0,
+    position: SIZE_PRESET.indexOf(size),
+    sku: `${product.sku}-${size}`,
+  });
+  if (error) { document.getElementById("sizeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  await loadItems();
+  openSizes(ITEMS.find((x) => x.id === product.id));
+}
+
+async function saveSizes(product) {
+  const msg = document.getElementById("sizeMsg");
+  const updates = [...document.querySelectorAll("#sizeTable tbody tr")].map((tr) => {
+    const val = (f) => tr.querySelector(`[data-f="${f}"]`).value.trim();
+    const price = val("price");
+    return {
+      id: tr.dataset.vid,
+      size: val("size"),
+      stock: parseInt(val("stock") || "0", 10),
+      price_cents: price === "" ? null : Math.round(parseFloat(price) * 100),
+    };
+  });
+  for (const u of updates) {
+    const { id, ...fields } = u;
+    const { error } = await sb.from("product_variants").update(fields).eq("id", id);
+    if (error) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  }
+  await loadItems();
+  msg.innerHTML = `<p class="notice">Saved.</p>`;
+}
+
+/* ---------------- modal shell ---------------- */
+function modalOpen(html) {
+  let m = document.getElementById("adminModal");
+  if (!m) {
+    m = document.createElement("div");
+    m.id = "adminModal"; m.className = "modal";
+    m.innerHTML = `<div class="modal-card" style="width:min(560px,100%)"></div>`;
+    document.body.appendChild(m);
+    m.addEventListener("click", (e) => { if (e.target === m) m.classList.remove("open"); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") m.classList.remove("open"); });
+  }
+  m.querySelector(".modal-card").innerHTML = html;
+  m.classList.add("open");
 }
 
 async function saveItem() {
