@@ -76,7 +76,7 @@ import {
   cfg, sb, money, escapeHtml, fetchProducts, readCart, setQty, cartCount,
   mountMasthead, refreshCredit, refreshCartCount, renderRail,
   currentUser, signIn, signUp, signOut, fetchBalance, startCheckout, rememberRef,
-  matchesQuery, allKeywords, productCard
+  matchesQuery, allKeywords, productCard, lineKey, priceOf
 } from "./shop.js";
 
 document.title = cfg.BRAND;
@@ -185,7 +185,11 @@ async function paintCart() {
   const body = document.getElementById("drawerBody");
   const foot = document.getElementById("drawerFoot");
   const lines = readCart()
-    .map(l => ({ ...l, product: PRODUCTS.find(p => p.id === l.product_id) }))
+    .map(l => {
+      const product = PRODUCTS.find(p => p.id === l.product_id);
+      const variant = product?.variants?.find(v => v.id === l.variant_id) || null;
+      return { ...l, product, variant, key: lineKey(l), unit: product ? priceOf(product, variant) : 0 };
+    })
     .filter(l => l.product);
 
   if (!lines.length) {
@@ -200,12 +204,12 @@ async function paintCart() {
         ? `<img src="${l.product.image_url}" alt="">` : ""}</div>
       <div style="flex:1">
         <div class="card-name">${escapeHtml(l.product.name)}</div>
-        <span class="tag">${escapeHtml(l.product.sku)}</span>
+        <span class="tag">${escapeHtml(l.product.sku)}${l.variant ? ` · size ${escapeHtml(l.variant.size)}` : ""}</span>
         <div class="qty">
-          <button data-id="${l.product_id}" data-q="${l.qty - 1}">&minus;</button>
+          <button data-id="${l.key}" data-q="${l.qty - 1}">&minus;</button>
           <span class="serial">${l.qty}</span>
-          <button data-id="${l.product_id}" data-q="${l.qty + 1}">+</button>
-          <span class="price" style="margin-left:auto">${money(l.product.price_cents * l.qty)}</span>
+          <button data-id="${l.key}" data-q="${l.qty + 1}">+</button>
+          <span class="price" style="margin-left:auto">${money(l.unit * l.qty)}</span>
         </div>
       </div>
     </div>`).join("");
@@ -213,7 +217,7 @@ async function paintCart() {
   body.querySelectorAll(".qty button").forEach(b =>
     b.addEventListener("click", () => setQty(b.dataset.id, Number(b.dataset.q))));
 
-  const subtotal = lines.reduce((s, l) => s + l.product.price_cents * l.qty, 0);
+  const subtotal = lines.reduce((s, l) => s + l.unit * l.qty, 0);
   const user = await currentUser();
   const balance = user ? await fetchBalance() : 0;
   const applied = useCredit ? Math.min(balance, subtotal) : 0;
