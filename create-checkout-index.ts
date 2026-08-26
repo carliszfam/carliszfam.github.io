@@ -115,22 +115,35 @@ Deno.serve(async (req) => {
       discountCents = Math.max(0, Math.min(d.discount_cents, subtotal));
       validDiscount = d.code;
     }
-    const afterDiscount = subtotal - discountCents;
+    const goodsAfterDiscount = subtotal - discountCents;
 
-    // Stripe rejects charges under roughly €0.50, so a heavy discount can
-    // leave a remainder too small to bill. Absorbing it costs at most a few
-    // cents and is better than a checkout that simply fails.
-    const STRIPE_MIN_CENTS = 50;
+    // ---- shipping and handling -------------------------------------------
+    // Neither is discountable: a code takes the shirt off the bill, not the
+    // courier. Handling applies to every order regardless of payment method.
+    const { data: settingRows } = await admin.from("shop_settings").select("key,value");
+    const setting = (k: string, d = 0) =>
+      settingRows?.find((r: any) => r.key === k)?.value ?? d;
+
+    const freeOver = setting("free_shipping_over_cents", 0);
+    const shippingCents = (freeOver > 0 && subtotal >= freeOver) ? 0 : setting("shipping_cents", 0);
+    const handlingCents = setting("handling_cents", 0);
 
     // ---- store credit ---------------------------------------------------
+    // Credit is the customer's own money, so it may cover anything on the bill.
+    const billBeforeCredit = goodsAfterDiscount + shippingCents + handlingCents;
     let creditApplied = 0;
     if (useCredit && userId) {
       const { data: ledger } = await admin
         .from("credit_ledger").select("delta_cents").eq("user_id", userId);
       const balance = (ledger ?? []).reduce((s: number, r: any) => s + r.delta_cents, 0);
-      creditApplied = Math.max(0, Math.min(balance, afterDiscount));
+      creditApplied = Math.max(0, Math.min(balance, billBeforeCredit));
     }
-    let total = afterDiscount - creditApplied;
+
+    // Stripe rejects charges under roughly €0.50, so a heavy reduction can
+    // leave a remainder too small to bill. Absorbing it costs at most a few
+    // cents and is better than a checkout that simply fails.
+    const STRIPE_MIN_CENTS = 50;
+    let total = billBeforeCredit - creditApplied;
     if (total > 0 && total < STRIPE_MIN_CENTS) {
       console.log(`Absorbing ${total}c remainder, below Stripe's minimum`);
       discountCents += total;
@@ -150,6 +163,7 @@ Deno.serve(async (req) => {
       user_id: userId, email, status: "pending",
       subtotal_cents: subtotal, discount_cents: discountCents,
       discount_code: validDiscount, credit_applied_cents: creditApplied,
+      shipping_cents: shippingCents, handling_cents: handlingCents,
       total_cents: total, currency, referral_code: validRef,
     }).select().single();
     if (oErr) throw oErr;
@@ -174,7 +188,10 @@ Deno.serve(async (req) => {
     // Credit is applied as a one-off discount so the receipt shows the real
     // list prices and the reduction, rather than fudged unit prices.
     const discounts = [];
-    const reduction = creditApplied + discountCents;
+    // A Stripe coupon reduces line items only, so cap it at what the line
+    // items are worth: goods plus handling, never the shipping rate.
+    const discountable = subtotal + handlingCents;
+    const reduction = Math.min(creditApplied + discountCents, discountable);
     if (reduction > 0) {
       const label = [discountCents > 0 ? validDiscount : null,
                      creditApplied > 0 ? "store credit" : null]
@@ -198,9 +215,25 @@ Deno.serve(async (req) => {
             ...(l.product.image_url ? { images: [l.product.image_url] } : {}),
           },
         },
-      })),
+      })).concat(handlingCents > 0 ? [{
+        quantity: 1,
+        price_data: {
+          currency,
+          unit_amount: handlingCents,
+          product_data: { name: "Handling" },
+        },
+      }] : []),
       discounts,
       shipping_address_collection: { allowed_countries: ["IE", "IT", "GB", "DE", "FR", "ES", "NL", "BE", "US"] },
+      ...(shippingCents > 0 ? {
+        shipping_options: [{
+          shipping_rate_data: {
+            type: "fixed_amount",
+            fixed_amount: { amount: shippingCents, currency },
+            display_name: "Shipping",
+          },
+        }],
+      } : {}),
       success_url: `${returnUrl}/success.html?order=${order.id}`,
       cancel_url: `${returnUrl}/index.html`,
       metadata: { order_id: order.id, referral_code: validRef ?? "" },

@@ -99,6 +99,15 @@ export async function fetchBalance() {
   return data || 0;
 }
 
+/* Shop-wide shipping and handling, read once per page load. */
+let _settings = null;
+export async function fetchSettings() {
+  if (_settings) return _settings;
+  const { data } = await sb.from("shop_settings").select("key,value");
+  _settings = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+  return _settings;
+}
+
 /* ---------------- auth ---------------- */
 export async function currentUser() {
   const { data: { user } } = await sb.auth.getUser();

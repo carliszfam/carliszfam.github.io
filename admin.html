@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Back office</title>
+<link rel="icon" href="./favicon.ico" sizes="any">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="theme-color" content="#EDEEE9">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -34,11 +38,13 @@
       <button class="tab" data-tab="codes">Garment codes</button>
       <button class="tab" data-tab="orders">Orders</button>
       <button class="tab" data-tab="discounts">Discounts</button>
+      <button class="tab" data-tab="settings">Settings</button>
     </div>
     <div id="tabItems"></div>
     <div id="tabCodes" class="hide"></div>
     <div id="tabOrders" class="hide"></div>
     <div id="tabDiscounts" class="hide"></div>
+    <div id="tabSettings" class="hide"></div>
   </div>
 </main>
 
@@ -65,7 +71,7 @@ async function boot() {
   $("gate").classList.add("hide");
   $("desk").classList.remove("hide");
   showOut(user);
-  loadItems(); loadCodes(); loadOrders(); loadDiscounts();
+  loadItems(); loadCodes(); loadOrders(); loadDiscounts(); loadSettings();
 }
 
 function showOut(user) {
@@ -94,7 +100,7 @@ function gateSignIn() {
 document.querySelectorAll(".tab").forEach((t) =>
   t.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
-    ["items", "codes", "orders", "discounts"].forEach((n) =>
+    ["items", "codes", "orders", "discounts", "settings"].forEach((n) =>
       $(`tab${n[0].toUpperCase()}${n.slice(1)}`).classList.toggle("hide", n !== t.dataset.tab));
   }));
 
@@ -516,7 +522,7 @@ let OPEN_ORDER = null;
 
 async function loadOrders() {
   const { data: orders } = await sb.from("orders")
-    .select("id,email,status,fulfillment,subtotal_cents,credit_applied_cents,total_cents,referral_code,tracking,ship_name,ship_address,created_at,shipped_at,received_at")
+    .select("id,email,status,fulfillment,subtotal_cents,discount_cents,discount_code,shipping_cents,handling_cents,credit_applied_cents,total_cents,referral_code,tracking,ship_name,ship_address,created_at,shipped_at,received_at")
     .order("created_at", { ascending: false }).limit(200);
 
   const rows = orders || [];
@@ -613,7 +619,9 @@ function orderRow(o) {
             ${addr
               ? `<p class="mini" style="line-height:1.7;margin:6px 0 0">${addr.map(escapeHtml).join("<br>")}</p>`
               : `<p class="mini sold-out" style="margin:6px 0 0">No address recorded. Look this order up in Stripe.</p>`}
-            ${o.referral_code ? `<p class="tag" style="margin-top:10px">Referred by ${escapeHtml(o.referral_code)}</p>` : ""}
+            ${o.shipping_cents ? `<p class="tag" style="margin-top:10px">Shipping ${money(o.shipping_cents)}</p>` : ""}
+            ${o.discount_code ? `<p class="tag" style="margin-top:6px">Code ${escapeHtml(o.discount_code)} −${money(o.discount_cents)}</p>` : ""}
+            ${o.referral_code ? `<p class="tag" style="margin-top:6px">Referred by ${escapeHtml(o.referral_code)}</p>` : ""}
             ${o.tracking ? `<p class="tag" style="margin-top:10px">Tracking ${escapeHtml(o.tracking)}</p>` : ""}
           </div>
         </div>
@@ -746,6 +754,71 @@ async function createDiscount() {
   if (error) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
   $("dCode").value = ""; $("dNote").value = "";
   loadDiscounts();
+}
+
+/* ================= settings ================= */
+let SETTINGS = {};
+
+async function loadSettings() {
+  const { data } = await sb.from("shop_settings").select("key,value");
+  SETTINGS = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+  paintSettings();
+}
+
+function paintSettings() {
+  const eur = (c) => ((c || 0) / 100).toFixed(2);
+  $("tabSettings").innerHTML = `
+    <div class="admin-grid">
+      <div class="panel">
+        <div class="panel-head"><span class="tag tag-ink">Shipping &amp; fees</span></div>
+        <p class="mini" style="color:var(--ink-soft);line-height:1.6;margin-top:0">
+          Discount codes reduce the goods only. Shipping and handling stay on the bill,
+          so a 100% code costs you the shirt but not the postage.</p>
+        <label class="field"><span>Flat shipping (${cfg.CURRENCY.toUpperCase()})</span>
+          <input class="input" id="sShip" type="number" step="0.01" min="0" value="${eur(SETTINGS.shipping_cents)}"></label>
+        <label class="field"><span>Free shipping over (0 = never)</span>
+          <input class="input" id="sFree" type="number" step="0.01" min="0" value="${eur(SETTINGS.free_shipping_over_cents)}"></label>
+        <label class="field"><span>Handling fee (0 = none)</span>
+          <input class="input" id="sHand" type="number" step="0.01" min="0" value="${eur(SETTINGS.handling_cents)}"></label>
+        <div id="sMsg"></div>
+        <button class="btn" id="sGo">Save</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><span class="tag tag-ink">How a bill adds up</span></div>
+        <table class="grid-table">
+          <tbody>
+            <tr><td class="mini">Goods</td><td class="mini">from the item and its size</td></tr>
+            <tr><td class="mini">− Discount</td><td class="mini">applies to goods only</td></tr>
+            <tr><td class="mini">+ Shipping</td><td class="mini">${SETTINGS.free_shipping_over_cents
+              ? `free over ${money(SETTINGS.free_shipping_over_cents)}` : "flat, always charged"}</td></tr>
+            <tr><td class="mini">+ Handling</td><td class="mini">${SETTINGS.handling_cents
+              ? "charged on every order" : "not charged"}</td></tr>
+            <tr><td class="mini">− Store credit</td><td class="mini">may cover any part of the bill</td></tr>
+          </tbody>
+        </table>
+        <p class="mini" style="color:var(--ink-soft);line-height:1.6;margin-top:14px">
+          Handling is charged on every order regardless of payment method. A fee that
+          varied by payment method would count as a card surcharge, which EU rules do
+          not permit for consumer cards. Worth confirming with your accountant.</p>
+      </div>
+    </div>`;
+
+  $("sGo")?.addEventListener("click", async () => {
+    const msg = $("sMsg");
+    const rows = [
+      { key: "shipping_cents",           value: Math.round(parseFloat($("sShip").value || "0") * 100) },
+      { key: "free_shipping_over_cents", value: Math.round(parseFloat($("sFree").value || "0") * 100) },
+      { key: "handling_cents",           value: Math.round(parseFloat($("sHand").value || "0") * 100) },
+    ];
+    for (const r of rows) {
+      const { error } = await sb.from("shop_settings")
+        .upsert({ ...r, updated_at: new Date().toISOString() }, { onConflict: "key" });
+      if (error) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+    }
+    await loadSettings();
+    $("sMsg").innerHTML = `<p class="notice">Saved.</p>`;
+  });
 }
 
 boot();

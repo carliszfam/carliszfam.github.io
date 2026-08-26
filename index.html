@@ -94,7 +94,7 @@ import {
   cfg, sb, money, escapeHtml, fetchProducts, readCart, setQty, cartCount,
   mountMasthead, refreshCredit, refreshCartCount, renderRail,
   currentUser, signIn, signUp, signOut, fetchBalance, startCheckout, rememberRef,
-  matchesQuery, allKeywords, productCard, lineKey, priceOf, nameOf, t
+  matchesQuery, allKeywords, productCard, lineKey, priceOf, nameOf, t, fetchSettings
 } from "./shop.js?v=8";
 
 document.title = cfg.BRAND;
@@ -248,9 +248,15 @@ async function paintCart() {
   }
   const cut = discount?.discount_cents || 0;
 
+  const st = await fetchSettings();
+  const freeOver = st.free_shipping_over_cents || 0;
+  const ship = (freeOver > 0 && subtotal >= freeOver) ? 0 : (st.shipping_cents || 0);
+  const handling = st.handling_cents || 0;
+  const bill = (subtotal - cut) + ship + handling;
+
   const user = await currentUser();
   const balance = user ? await fetchBalance() : 0;
-  const applied = useCredit ? Math.min(balance, subtotal - cut) : 0;
+  const applied = useCredit ? Math.min(balance, bill) : 0;
 
   foot.innerHTML = `
     <div class="promo-row">
@@ -265,8 +271,11 @@ async function paintCart() {
       </label>` : ""}
     <div class="total-row"><span class="tag">${t("subtotal")}</span><span class="price">${money(subtotal)}</span></div>
     ${cut ? `<div class="total-row"><span class="tag">${escapeHtml(discount.code)}</span><span class="price">−${money(cut)}</span></div>` : ""}
+    ${ship || freeOver ? `<div class="total-row"><span class="tag">${t("shipping")}</span><span class="price">${ship ? money(ship) : t("freeShip")}</span></div>` : ""}
+    ${handling ? `<div class="total-row"><span class="tag">${t("handling")}</span><span class="price">${money(handling)}</span></div>` : ""}
     ${applied ? `<div class="total-row"><span class="tag">${t("credit")}</span><span class="price">−${money(applied)}</span></div>` : ""}
-    <div class="total-row grand"><span class="tag tag-ink">${t("toPay")}</span><span class="price">${money(subtotal - cut - applied)}</span></div>
+    <div class="total-row grand"><span class="tag tag-ink">${t("toPay")}</span><span class="price">${money(bill - applied)}</span></div>
+    ${cut && (ship || handling) ? `<p class="tag" style="margin-top:6px">${t("notDiscounted")}</p>` : ""}
     <div id="checkoutMsg"></div>
     <button class="btn" id="checkoutBtn" style="margin-top:14px">${t("checkout")}</button>`;
 
