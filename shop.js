@@ -57,15 +57,28 @@ export const cartCount = () => readCart().reduce((n, l) => n + l.qty, 0);
 
 /* ---------------- data ---------------- */
 export async function fetchProducts() {
-  const { data, error } = await sb.from("products")
-    .select("*, variants:product_variants(id,size,sku,price_cents,stock,position,active)")
-    .eq("active", true)
+  // Two plain queries rather than an embedded join. PostgREST embedding
+  // depends on its cached view of foreign keys, which lags behind a fresh
+  // migration; stitching client-side has no such dependency and costs one
+  // extra round trip on a catalogue this size.
+  const { data: products, error } = await sb.from("products")
+    .select("*").eq("active", true)
     .order("collection").order("position").order("created_at");
   if (error) throw error;
-  return (data || []).map((p) => ({
+  if (!products?.length) return [];
+
+  let variants = [];
+  const { data: vs, error: vErr } = await sb.from("product_variants")
+    .select("id,product_id,size,sku,price_cents,stock,position,active")
+    .in("product_id", products.map((p) => p.id));
+  // A missing variants table must not take the whole shop down.
+  if (vErr) console.warn("Variants unavailable, showing items unsized:", vErr.message);
+  else variants = vs || [];
+
+  return products.map((p) => ({
     ...p,
-    variants: (p.variants || [])
-      .filter((v) => v.active)
+    variants: variants
+      .filter((v) => v.product_id === p.id && v.active)
       .sort((a, b) => a.position - b.position),
   }));
 }
