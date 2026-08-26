@@ -35,6 +35,13 @@
     </div>
   </section>
 
+  <section class="searchbar">
+    <input class="input search-input" id="q" type="search"
+           placeholder="Search by name, tag or code" aria-label="Search the shop">
+    <div class="chip-row" id="tagRow"></div>
+  </section>
+
+  <div id="results" class="hide"></div>
   <div id="rails"></div>
   <div id="railsEmpty" class="empty hide">
     <p class="tag">Nothing in stock yet.</p>
@@ -68,7 +75,8 @@
 import {
   cfg, sb, money, escapeHtml, fetchProducts, readCart, setQty, cartCount,
   mountMasthead, refreshCredit, refreshCartCount, renderRail,
-  currentUser, signIn, signUp, signOut, fetchBalance, startCheckout, rememberRef
+  currentUser, signIn, signUp, signOut, fetchBalance, startCheckout, rememberRef,
+  matchesQuery, allKeywords, productCard
 } from "./shop.js";
 
 document.title = cfg.BRAND;
@@ -106,7 +114,60 @@ async function loadCatalogue() {
   for (const [name, items] of groups) {
     renderRail(mount, { title: name.replace(/^\w/, c => c.toUpperCase()), products: items });
   }
+  buildTagRow();
 }
+
+/* ---------------- search ---------------- */
+const qInput  = document.getElementById("q");
+const results = document.getElementById("results");
+const railsEl = document.getElementById("rails");
+
+function buildTagRow() {
+  const row = document.getElementById("tagRow");
+  const tags = allKeywords(PRODUCTS).slice(0, 12);
+  if (!tags.length) { row.classList.add("hide"); return; }
+  row.innerHTML = tags.map(([k, n]) =>
+    `<button class="chip tag-chip" data-tag="${escapeHtml(k)}">${escapeHtml(k)} <b>${n}</b></button>`).join("");
+  row.querySelectorAll("[data-tag]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const t = b.dataset.tag;
+      qInput.value = qInput.value.trim() === t ? "" : t;   // click again to clear
+      runSearch();
+    }));
+}
+
+function runSearch() {
+  const query = qInput.value.trim();
+  document.querySelectorAll("[data-tag]").forEach((b) =>
+    b.classList.toggle("on", b.dataset.tag === query.toLowerCase()));
+
+  if (!query) {
+    results.classList.add("hide");
+    railsEl.classList.remove("hide");
+    return;
+  }
+
+  const hits = PRODUCTS.filter((p) => matchesQuery(p, query));
+  railsEl.classList.add("hide");
+  results.classList.remove("hide");
+  results.innerHTML = `
+    <div class="rail-head">
+      <h2>${hits.length ? `${hits.length} match${hits.length === 1 ? "" : "es"}` : "Nothing found"}</h2>
+      <span class="tag">for “${escapeHtml(query)}”</span>
+      <button class="chip" id="clearQ" style="margin-left:auto">Clear</button>
+    </div>
+    <div class="results-grid"></div>`;
+
+  const grid = results.querySelector(".results-grid");
+  if (hits.length) hits.forEach((p) => grid.appendChild(productCard(p)));
+  else grid.innerHTML = `<p class="empty">No item matches that. Try a different word, or clear the search to see everything.</p>`;
+
+  document.getElementById("clearQ").addEventListener("click", () => { qInput.value = ""; runSearch(); });
+}
+
+let debounce;
+qInput.addEventListener("input", () => { clearTimeout(debounce); debounce = setTimeout(runSearch, 140); });
+qInput.addEventListener("search", runSearch);
 
 /* ---------------- cart drawer ---------------- */
 const scrim = document.getElementById("scrim");

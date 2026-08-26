@@ -343,8 +343,53 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
 
 @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } }
 
+/* the wordmark sits under the code, the way it would on a sewn label */
+.qr-brand {
+  display: inline-flex; margin-top: 10px;
+  font-size: 0.66rem; letter-spacing: 0.32em; padding: 0.3em 0.7em 0.34em;
+}
+.qr-cell .serial { margin-top: 6px; color: var(--ink-soft); font-size: 0.62rem; }
+
 @media print {
-  .masthead, .tabs, .panel, .no-print { display: none !important; }
+  /* Hide the chrome, keep the sheet. The sheet lives inside a .panel,
+     so the panel itself must survive — only its decoration goes. */
+  .masthead, .tabs, .no-print { display: none !important; }
   body { background: #fff; }
-  .qr-sheet { grid-template-columns: repeat(4, 1fr); }
+  .shell { max-width: none; padding: 0; }
+  .admin-grid { display: block; }
+  .panel { border: none; background: none; padding: 0; }
+  .qr-sheet { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .qr-cell { break-inside: avoid; page-break-inside: avoid; border-color: #ddd; }
+  .redaction { background: #000 !important; color: #fff !important;
+               -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* ============================================================
+   Search
+   ============================================================ */
+.searchbar {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 30px 0 4px; border-bottom: 1px solid var(--rule);
+}
+.search-input {
+  max-width: 460px; padding: 13px 14px;
+  letter-spacing: 0.04em; background: transparent;
+}
+.search-input::placeholder { color: var(--ink-soft); letter-spacing: 0.1em; text-transform: uppercase; font-size: 0.78rem; }
+
+.chip-row { display: flex; gap: 7px; flex-wrap: wrap; }
+.tag-chip { padding: 6px 10px; }
+.tag-chip b { color: var(--ink-soft); font-weight: 500; }
+.tag-chip.on { background: var(--bluing); border-color: var(--bluing); color: #fff; }
+.tag-chip.on b { color: rgba(255,255,255,0.7); }
+
+.results-grid {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  padding-bottom: 20px;
+}
+.results-grid .card { flex: none; }
+
+@media (max-width: 640px) {
+  .results-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }

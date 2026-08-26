@@ -126,6 +126,7 @@ function paintItems() {
           <label class="field" style="flex:1"><span>Rail</span><input class="input" id="fColl" value="shirts"></label>
           <label class="field" style="width:90px"><span>Order</span><input class="input" id="fPos" type="number" value="0"></label>
         </div>
+        <label class="field"><span>Keywords</span><input class="input" id="fKeys" placeholder="chilli, calabria, cotton"></label>
         <label class="field"><span>Photo</span><input class="input" id="fFile" type="file" accept="image/*"></label>
         <label class="field"><span>or image url</span><input class="input" id="fImg" placeholder="https://…"></label>
         <label class="row" style="margin:6px 0 14px">
@@ -145,7 +146,8 @@ function paintItems() {
             <tr>
               <td>${p.image_url ? `<img class="thumb" src="${escapeHtml(p.image_url)}" alt="">` : `<div class="thumb"></div>`}</td>
               <td><b>${escapeHtml(p.name)}</b><br><span class="mini">${escapeHtml(p.sku)}</span>${p.active ? "" : ` <span class="mini sold-out">hidden</span>`}</td>
-              <td class="mini">${escapeHtml(p.collection)}</td>
+              <td class="mini">${escapeHtml(p.collection)}${
+                p.keywords?.length ? `<br><span style="color:var(--ink-soft)">${escapeHtml(p.keywords.join(" · "))}</span>` : ""}</td>
               <td class="mini">${money(p.price_cents, p.currency)}</td>
               <td class="mini">${p.stock}</td>
               <td class="row">
@@ -162,6 +164,7 @@ function paintItems() {
     $("fBlurb").value = editing.blurb || ""; $("fPrice").value = eur(editing.price_cents);
     $("fStock").value = editing.stock; $("fColl").value = editing.collection;
     $("fPos").value = editing.position; $("fImg").value = editing.image_url || "";
+    $("fKeys").value = (editing.keywords || []).join(", ");
     $("fActive").checked = editing.active;
     $("cancelEdit").addEventListener("click", () => { editing = null; paintItems(); });
   }
@@ -201,6 +204,8 @@ async function saveItem() {
     position: parseInt($("fPos").value || "0", 10),
     active: $("fActive").checked,
     currency: cfg.CURRENCY,
+    keywords: [...new Set($("fKeys").value.split(",")
+      .map((k) => k.trim().toLowerCase()).filter(Boolean))],
   };
   if (image_url) row.image_url = image_url;
 
@@ -236,7 +241,7 @@ function paintCodes() {
   const claimed = CODES.filter((c) => c.claimed_by).length;
   $("tabCodes").innerHTML = `
     <div class="admin-grid">
-      <div class="panel">
+      <div class="panel no-print">
         <div class="panel-head"><span class="tag tag-ink">Print a run</span></div>
         <p class="mini" style="color:var(--ink-soft);line-height:1.6">Each garment gets its own code.
           Print the QR on the care label. Once someone claims it, later scans go straight to the shop.</p>
@@ -254,7 +259,7 @@ function paintCodes() {
       </div>
 
       <div class="panel">
-        <div class="panel-head">
+        <div class="panel-head no-print">
           <span class="tag tag-ink">Codes</span>
           <span class="tag">${CODES.length} printed · ${claimed} claimed</span>
           <button class="tab no-print" id="wipeBtn" style="margin-left:auto">Delete unclaimed</button>
@@ -309,8 +314,9 @@ function paintSheet() {
     const cell = document.createElement("div");
     cell.className = "qr-cell";
     cell.innerHTML = `<canvas></canvas>
+      <span class="redaction qr-brand">${escapeHtml(cfg.BRAND)}</span>
       <span class="serial">${escapeHtml(c.item_number)}</span>
-      <span class="tag" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>
+      <span class="tag no-print" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>
       ${c.claimed_by ? "" : `<button class="tab no-print" data-drop="${escapeHtml(c.code)}" style="padding:2px 6px;font-size:0.62rem">Delete</button>`}`;
     sheet.appendChild(cell);
     const drop = cell.querySelector("[data-drop]");

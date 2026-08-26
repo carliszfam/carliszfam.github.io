@@ -190,6 +190,25 @@ export function productCard(p) {
   return el;
 }
 
+/* ---------------- search ----------------
+   The catalogue is already in memory, so filtering happens in the browser:
+   instant, no round trip, and it works while offline. If the catalogue ever
+   outgrows that, move this to a Postgres query against the GIN index. */
+export function matchesQuery(p, query) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const hay = [p.name, p.sku, p.blurb, p.collection, ...(p.keywords || [])]
+    .filter(Boolean).join(" ").toLowerCase();
+  return terms.every((t) => hay.includes(t));
+}
+
+export function allKeywords(products) {
+  const seen = new Map();
+  for (const p of products)
+    for (const k of p.keywords || []) seen.set(k, (seen.get(k) || 0) + 1);
+  return [...seen.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
 export const escapeHtml = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
