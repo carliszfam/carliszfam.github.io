@@ -66,6 +66,20 @@
     <p data-i="nothingYetP"></p>
   </div>
 
+  <section class="subscribe">
+    <div>
+      <span class="tag" data-i="subTitle"></span>
+      <p class="hero-lede" style="margin:8px 0 0" data-i="subNote"></p>
+    </div>
+    <div>
+      <div class="row">
+        <input class="input" id="subEmail" type="email" data-ph="subPh" style="flex:1" autocomplete="email">
+        <button class="chip" id="subGo"></button>
+      </div>
+      <div id="subMsg"></div>
+    </div>
+  </section>
+
   <footer class="foot">
     <span class="redaction" id="footBrand"></span>
     <span class="tag" data-i="smallRuns"></span>
@@ -443,6 +457,24 @@ function paintAuth(mode) {
     paintAccount();
   });
 }
+
+/* ---------------- mailing list ---------------- */
+document.getElementById("subGo").textContent = t("subGo");
+document.getElementById("subGo").addEventListener("click", async () => {
+  const msg = document.getElementById("subMsg");
+  const email = document.getElementById("subEmail").value.trim();
+  const { data, error } = await sb.rpc("subscribe", {
+    p_email: email,
+    p_lang: (await import("./i18n.js?v=8")).LANG,
+    p_source: "storefront",
+  });
+  if (error || !data?.ok) {
+    msg.innerHTML = `<p class="notice notice-bad">${t("subBad")}</p>`;
+    return;
+  }
+  msg.innerHTML = `<p class="notice">${t("subDone")}</p>`;
+  document.getElementById("subEmail").value = "";
+});
 
 /* ---------------- boot ---------------- */
 await loadCatalogue();

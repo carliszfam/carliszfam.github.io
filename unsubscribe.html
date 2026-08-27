@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unsubscribe</title>
+<link rel="icon" href="./favicon.ico" sizes="any">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<meta name="theme-color" content="#EDEEE9">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./shop.css?v=8">
+<script src="./config.js?v=8"></script>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-in"><a class="redaction" href="./index.html" id="brand"></a></div>
+</header>
+
+<main class="shell">
+  <div class="pane" id="pane"></div>
+</main>
+
+<script type="module">
+import { cfg, sb, t } from "./shop.js?v=8";
+
+document.getElementById("brand").textContent = cfg.BRAND;
+const pane = document.getElementById("pane");
+const token = new URLSearchParams(location.search).get("t");
+
+/* One click, no confirmation step: making someone log in to leave a
+   mailing list is the kind of friction that earns spam complaints. */
+if (!token) {
+  pane.innerHTML = `<p class="notice notice-bad">This link is missing its code.</p>
+    <a class="btn" href="./index.html" style="margin-top:18px">${t("backToShop")}</a>`;
+} else {
+  const { data } = await sb.rpc("unsubscribe", { p_token: token });
+  pane.innerHTML = `
+    <span class="tag">${t("unsubTitle")}</span>
+    <h2 style="margin:12px 0 8px">${data?.changed ? t("unsubDone") : t("unsubAlready")}</h2>
+    <a class="btn" href="./index.html" style="margin-top:18px">${t("backToShop")}</a>`;
+}
+</script>
+</body>
+</html>

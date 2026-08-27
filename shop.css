@@ -494,3 +494,14 @@ textarea.input { font-family: "Archivo", sans-serif; line-height: 1.5; resize: v
   display: block; font-family: var(--tag-font); font-size: 1.25rem;
   letter-spacing: 0.22em; color: var(--bluing); margin-top: 4px;
 }
+
+/* ---------- mailing list ---------- */
+.subscribe {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: center;
+  border-top: 1px solid var(--rule); margin-top: 50px; padding: 32px 0;
+}
+@media (max-width: 700px) { .subscribe { grid-template-columns: 1fr; gap: 16px; } }
+
+/* ---------- one garment, in full ---------- */
+.code-detail { display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: start; }
+@media (max-width: 620px) { .code-detail { grid-template-columns: 1fr; } }

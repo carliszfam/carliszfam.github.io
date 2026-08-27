@@ -101,6 +101,13 @@ const STRINGS = {
     registeredToYou: "This serial is registered to you.",
     goesToOwner: "{amount} of this sale goes to the owner of this shirt.",
 
+    subTitle: "New drops", 
+    subNote: "Runs are small and numbered. Leave your email and we will tell you when the next one lands.",
+    subPh: "your@email", subGo: "Keep me posted",
+    subDone: "You are on the list.", subBad: "That does not look like an email address.",
+    unsubTitle: "Unsubscribed", unsubDone: "You will not hear from us again.",
+    unsubAlready: "That address was already off the list.",
+
     shipping: "Shipping", handling: "Handling", freeShip: "Free",
     notDiscounted: "Shipping and handling are not discounted.",
 
@@ -208,6 +215,13 @@ const STRINGS = {
     lookInstead: "Dai un'occhiata a cosa c'è disponibile.",
     registeredToYou: "Questo numero è registrato a te.",
     goesToOwner: "{amount} di questa vendita vanno a chi possiede questa maglia.",
+
+    subTitle: "Nuove uscite",
+    subNote: "Le serie sono piccole e numerate. Lascia la tua email e ti diciamo quando esce la prossima.",
+    subPh: "tua@email", subGo: "Tienimi aggiornato",
+    subDone: "Sei in lista.", subBad: "Questo non sembra un indirizzo email.",
+    unsubTitle: "Disiscritto", unsubDone: "Non ti scriveremo più.",
+    unsubAlready: "Quell'indirizzo era già fuori dalla lista.",
 
     shipping: "Spedizione", handling: "Gestione", freeShip: "Gratis",
     notDiscounted: "Spedizione e gestione non sono scontate.",

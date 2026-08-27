@@ -38,12 +38,14 @@
       <button class="tab" data-tab="codes">Garment codes</button>
       <button class="tab" data-tab="orders">Orders</button>
       <button class="tab" data-tab="discounts">Discounts</button>
+      <button class="tab" data-tab="subs">Subscribers</button>
       <button class="tab" data-tab="settings">Settings</button>
     </div>
     <div id="tabItems"></div>
     <div id="tabCodes" class="hide"></div>
     <div id="tabOrders" class="hide"></div>
     <div id="tabDiscounts" class="hide"></div>
+    <div id="tabSubs" class="hide"></div>
     <div id="tabSettings" class="hide"></div>
   </div>
 </main>
@@ -71,7 +73,7 @@ async function boot() {
   $("gate").classList.add("hide");
   $("desk").classList.remove("hide");
   showOut(user);
-  loadItems(); loadCodes(); loadOrders(); loadDiscounts(); loadSettings();
+  loadItems(); loadCodes(); loadOrders(); loadDiscounts(); loadSettings(); loadSubs();
 }
 
 function showOut(user) {
@@ -100,7 +102,7 @@ function gateSignIn() {
 document.querySelectorAll(".tab").forEach((t) =>
   t.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === t));
-    ["items", "codes", "orders", "discounts", "settings"].forEach((n) =>
+    ["items", "codes", "orders", "discounts", "subs", "settings"].forEach((n) =>
       $(`tab${n[0].toUpperCase()}${n.slice(1)}`).classList.toggle("hide", n !== t.dataset.tab));
   }));
 
@@ -348,153 +350,206 @@ async function saveItem() {
   await loadCodes();
 }
 
-/* ================= garment codes ================= */
+/* ================= garment codes =================
+   A list, not a wall of QR images: at a hundred garments the grid stops
+   being readable. Click a row for the code, who holds it and where it went. */
 let CODES = [];
+let CODE_FILTER = "all";
+let CODE_QUERY = "";
 
 async function loadCodes() {
   const { data } = await sb.from("garment_codes")
-    .select("code,item_number,product_id,claimed_by,claimed_at")
-    .order("created_at", { ascending: false }).limit(400);
+    .select("code,item_number,product_id,size,color,claimed_by,claimed_at,order_id,created_at")
+    .order("created_at", { ascending: false }).limit(500);
   CODES = data || [];
   paintCodes();
 }
 
-/* 80 bits of randomness, no ambiguous characters (no 0/O, 1/I). */
 function newToken(n = 16) {
   const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(n));
-  return Array.from(bytes, (b) => abc[b % 32]).join("");
+  return Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => abc[b % 32]).join("");
+}
+
+const CODE_FILTERS = [
+  ["all",       "All"],
+  ["sold",      "Sold"],
+  ["unsold",    "Not sold"],
+  ["claimed",   "Claimed"],
+  ["unclaimed", "Unclaimed"],
+];
+
+function filterCodes() {
+  let rows = CODES;
+  if (CODE_FILTER === "sold")      rows = rows.filter((c) => c.order_id);
+  if (CODE_FILTER === "unsold")    rows = rows.filter((c) => !c.order_id);
+  if (CODE_FILTER === "claimed")   rows = rows.filter((c) => c.claimed_by);
+  if (CODE_FILTER === "unclaimed") rows = rows.filter((c) => !c.claimed_by);
+  if (CODE_QUERY) {
+    const q = CODE_QUERY.toLowerCase();
+    rows = rows.filter((c) => (c.item_number + " " + c.code).toLowerCase().includes(q));
+  }
+  return rows;
 }
 
 function paintCodes() {
+  const rows = filterCodes();
+  const sold = CODES.filter((c) => c.order_id).length;
   const claimed = CODES.filter((c) => c.claimed_by).length;
+
   $("tabCodes").innerHTML = `
     <div class="admin-grid">
-      <div class="panel no-print">
-        <div class="panel-head"><span class="tag tag-ink">Print a run</span></div>
-        <p class="mini" style="color:var(--ink-soft);line-height:1.6">Each garment gets its own code.
-          Print it large on the back — 8 cm or more, so it reads across a room. Once someone claims it, later scans go straight to the shop.</p>
+      <div class="panel">
+        <div class="panel-head"><span class="tag tag-ink">Issue by hand</span></div>
+        <p class="mini" style="color:var(--ink-soft);line-height:1.6;margin-top:0">
+          Serials are minted automatically when an order is paid, so you rarely need this.
+          Use it only for samples, gifts or stock printed ahead of time.</p>
         <label class="field"><span>Item</span>
           <select class="input" id="gProduct">
             ${ITEMS.map((p) => `<option value="${p.id}" data-sku="${escapeHtml(p.sku)}">${escapeHtml(p.name)}</option>`).join("")}
           </select></label>
         <div class="row">
-          <label class="field" style="flex:1"><span>How many</span><input class="input" id="gCount" type="number" min="1" max="200" value="12"></label>
+          <label class="field" style="flex:1"><span>How many</span><input class="input" id="gCount" type="number" min="1" max="200" value="5"></label>
           <label class="field" style="flex:1"><span>Serial starts at</span><input class="input" id="gStart" type="number" min="1" value="1"></label>
         </div>
         <div id="genMsg"></div>
-        <button class="btn" id="genGo" ${ITEMS.length ? "" : "disabled"}>Generate codes</button>
-        ${ITEMS.length ? "" : `<p class="notice notice-bad">Add an item first.</p>`}
+        <button class="btn" id="genGo" ${ITEMS.length ? "" : "disabled"}>Generate</button>
       </div>
 
       <div class="panel">
-        <div class="panel-head no-print">
-          <span class="tag tag-ink">Codes</span>
-          <span class="tag">${CODES.length} printed · ${claimed} claimed</span>
-          <button class="tab no-print" id="wipeBtn" style="margin-left:auto">Delete unclaimed</button>
-          <button class="tab no-print" id="printBtn">Print sheet</button>
+        <div class="panel-head">
+          <span class="tag tag-ink">Garments</span>
+          <span class="tag">${CODES.length} issued · ${sold} sold · ${claimed} claimed</span>
+        </div>
+        <div class="row" style="margin-bottom:14px">
+          <input class="input" id="codeSearch" placeholder="Search serial" style="flex:1" value="${escapeHtml(CODE_QUERY)}">
+          ${CODE_FILTERS.map(([k, l]) =>
+            `<button class="chip ${CODE_FILTER === k ? "tag-chip on" : ""}" data-cf="${k}">${l}</button>`).join("")}
         </div>
         <div id="codeMsg"></div>
-        <div class="qr-sheet" id="qrSheet"></div>
-        ${CODES.length ? "" : `<p class="empty">No codes yet.</p>`}
+        ${rows.length ? `
+        <table class="grid-table">
+          <thead><tr><th>Serial</th><th>Variant</th><th>Sold</th><th>Claimed</th><th></th></tr></thead>
+          <tbody>${rows.map((c) => `
+            <tr>
+              <td><b class="mini">${escapeHtml(c.item_number)}</b></td>
+              <td class="mini">${escapeHtml([c.color, c.size].filter(Boolean).join(" ") || "—")}</td>
+              <td class="mini ${c.order_id ? "" : "ship-received"}">${c.order_id ? "yes" : "—"}</td>
+              <td class="mini ${c.claimed_by ? "ship-shipped" : "ship-unfulfilled"}">${c.claimed_by ? "yes" : "no"}</td>
+              <td><button class="tab" data-detail="${escapeHtml(c.code)}" style="padding:2px 6px">Open</button></td>
+            </tr>`).join("")}</tbody>
+        </table>` : `<p class="empty">Nothing matches.</p>`}
       </div>
     </div>`;
 
-  $("printBtn")?.addEventListener("click", () => window.print());
   $("genGo")?.addEventListener("click", generateCodes);
-  $("wipeBtn")?.addEventListener("click", wipeUnclaimed);
-  paintSheet();
-}
-
-/* Claimed codes are never touched: deleting one would orphan a garment
-   that is already sewn shut and can then never be claimed by anyone. */
-async function wipeUnclaimed() {
-  const unclaimed = CODES.filter((c) => !c.claimed_by).length;
-  if (!unclaimed) { $("codeMsg").innerHTML = `<p class="notice">Every code is claimed. Nothing to delete.</p>`; return; }
-  if (!confirm(`Delete ${unclaimed} unclaimed codes? Claimed garments are kept.`)) return;
-
-  const { error } = await sb.from("garment_codes").delete().is("claimed_by", null);
-  if (error) { $("codeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
-  await loadCodes();
-  $("codeMsg").innerHTML = `<p class="notice">Deleted ${unclaimed} codes.</p>`;
-}
-
-/* Deleting a claimed code cuts a real garment loose: the label is already
-   sewn in, so that shirt can never be scanned again and its owner stops
-   earning from it. Two gates, the second one deliberately awkward.
-   Past payouts survive — the ledger keeps the rows and only loses the link. */
-async function deleteClaimedCode(code, serial) {
-  const first = confirm(
-    `${serial} is CLAIMED.\n\n` +
-    `Someone owns this garment. Deleting the code means:\n` +
-    `  · the QR sewn into that shirt stops working, permanently\n` +
-    `  · its owner earns nothing from it again\n` +
-    `  · credit already paid is kept, but loses its link to this garment\n\n` +
-    `There is no undo. Continue?`);
-  if (!first) return;
-
-  const typed = prompt(
-    `Second check.\n\nType the serial exactly to confirm deletion:\n${serial}`);
-  if (typed === null) return;
-  if (typed.trim().toLowerCase() !== serial.toLowerCase()) {
-    $("codeMsg").innerHTML = `<p class="notice notice-bad">That did not match ${escapeHtml(serial)}. Nothing was deleted.</p>`;
-    return;
-  }
-
-  const { error } = await sb.from("garment_codes").delete().eq("code", code);
-  if (error) { $("codeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
-  await loadCodes();
-  $("codeMsg").innerHTML = `<p class="notice notice-bad">Deleted ${escapeHtml(serial)}. That garment is now unscannable.</p>`;
-}
-
-async function deleteCode(code) {
-  if (!confirm(`Delete ${code}? Only do this if the label was never printed.`)) return;
-  const { error } = await sb.from("garment_codes").delete().eq("code", code).is("claimed_by", null);
-  if (error) { $("codeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
-  loadCodes();
-}
-
-function paintSheet() {
-  const sheet = $("qrSheet");
-  if (!sheet) return;
-  sheet.innerHTML = "";
-
-  if (!window.QRCode) {
-    sheet.innerHTML = `<p class="notice notice-bad" style="grid-column:1/-1">
-      The QR library did not load, so the codes below cannot be drawn.
-      Check your connection and reload. The codes themselves are safely
-      stored — nothing was lost.</p>`;
-    return;
-  }
-
-  CODES.slice(0, 120).forEach((c) => {
-    const cell = document.createElement("div");
-    cell.className = "qr-cell";
-    cell.innerHTML = `<canvas></canvas>
-      <span class="redaction qr-brand">${escapeHtml(cfg.BRAND)}</span>
-      <span class="serial">${escapeHtml(c.item_number)}</span>
-      <span class="tag no-print" style="font-size:0.62rem">${c.claimed_by ? "claimed" : "unclaimed"}</span>
-      ${c.claimed_by
-        ? `<button class="tab no-print danger" data-drop-claimed="${escapeHtml(c.code)}" data-serial="${escapeHtml(c.item_number)}" style="padding:2px 6px;font-size:0.62rem">Delete</button>`
-        : `<button class="tab no-print" data-drop="${escapeHtml(c.code)}" style="padding:2px 6px;font-size:0.62rem">Delete</button>`}`;
-    sheet.appendChild(cell);
-    const drop = cell.querySelector("[data-drop]");
-    if (drop) drop.addEventListener("click", () => deleteCode(drop.dataset.drop));
-    const dropC = cell.querySelector("[data-drop-claimed]");
-    if (dropC) dropC.addEventListener("click", () =>
-      deleteClaimedCode(dropC.dataset.dropClaimed, dropC.dataset.serial));
-    const url = `${cfg.SITE_URL}/q.html?i=${encodeURIComponent(c.item_number)}&c=${encodeURIComponent(c.code)}`;
-    window.QRCode.toCanvas(cell.querySelector("canvas"), url,
-      { width: 320, margin: 1, errorCorrectionLevel: "H",
-        color: { dark: "#14161A", light: "#ffffff" } },
-      (err) => { if (err) console.error("QR draw failed:", err); });
+  $("codeSearch")?.addEventListener("input", (e) => {
+    CODE_QUERY = e.target.value;
+    const pos = e.target.selectionStart;
+    paintCodes();
+    const el = $("codeSearch"); el.focus(); el.setSelectionRange(pos, pos);
   });
+  document.querySelectorAll("[data-cf]").forEach((b) =>
+    b.addEventListener("click", () => { CODE_FILTER = b.dataset.cf; paintCodes(); }));
+  document.querySelectorAll("[data-detail]").forEach((b) =>
+    b.addEventListener("click", () => openCode(b.dataset.detail)));
+}
+
+async function openCode(code) {
+  const { data: d } = await sb.rpc("admin_code_detail", { p_code: code });
+  if (!d?.ok) { $("codeMsg").innerHTML = `<p class="notice notice-bad">Could not open that serial.</p>`; return; }
+
+  const a = d.order?.ship_address || {};
+  const address = [d.order?.ship_name, a.line1, a.line2,
+                   [a.postal_code, a.city].filter(Boolean).join(" "), a.state, a.country]
+                  .filter(Boolean).map(escapeHtml).join("<br>");
+
+  modalOpen(`
+    <div class="code-detail">
+      <div>
+        <canvas id="qrBig" style="width:100%;background:#fff"></canvas>
+        <p class="serial" style="text-align:center;margin:10px 0 0">${escapeHtml(d.item_number)}</p>
+        <p class="tag" style="text-align:center">${escapeHtml([d.color, d.size].filter(Boolean).join(" ") || "")}</p>
+        <button class="chip" id="qrDl" style="width:100%;margin-top:10px;justify-content:center">Download PNG</button>
+      </div>
+      <div>
+        <span class="tag">${escapeHtml(d.product?.name || "Unknown item")}</span>
+        <h2 style="margin:6px 0 16px;font-size:1.3rem">${d.sold ? "Sold" : "Not sold"}</h2>
+
+        ${d.sold ? `
+          <div class="total-row"><span class="tag">Paid</span><span class="price">${money(d.line?.unit_price_cents || 0)}</span></div>
+          <div class="total-row"><span class="tag">Order</span><span class="mini">${escapeHtml(String(d.order.id).slice(0, 8))}</span></div>
+          <div class="total-row"><span class="tag">Status</span><span class="mini">${escapeHtml(d.order.fulfillment)}</span></div>
+          ${d.order.tracking ? `<div class="total-row"><span class="tag">Tracking</span><span class="mini">${escapeHtml(d.order.tracking)}</span></div>` : ""}
+          <p class="tag" style="margin-top:14px">Buyer</p>
+          <p class="mini" style="margin:4px 0 0">${escapeHtml(d.order.email || "—")}</p>
+          <p class="tag" style="margin-top:12px">Shipped to</p>
+          <p class="mini" style="line-height:1.7;margin:4px 0 0">${address || "No address recorded"}</p>
+        ` : `<p class="mini" style="color:var(--ink-soft)">This serial was issued by hand and has not been sold through the shop.</p>`}
+
+        <p class="tag" style="margin-top:18px">Owner</p>
+        <p class="mini" style="margin:4px 0 0">${d.claimed
+          ? `${escapeHtml(d.owner_email || "claimed")}<br><span style="color:var(--ink-soft)">since ${new Date(d.claimed_at).toLocaleDateString(cfg.LOCALE)}</span>`
+          : "<span style='color:var(--ink-soft)'>Not claimed yet</span>"}</p>
+
+        ${d.history?.length ? `
+          <p class="tag" style="margin-top:18px">History</p>
+          <p class="mini" style="line-height:1.7;margin:4px 0 0">${d.history.map((h) =>
+            `${escapeHtml(h.event)} · ${new Date(h.at).toLocaleDateString(cfg.LOCALE)}`).join("<br>")}</p>` : ""}
+
+        <button class="tab danger" id="delCode" style="margin-top:22px;padding:6px 10px">Delete this serial</button>
+      </div>
+    </div>`);
+
+  document.getElementById("delCode").addEventListener("click", () => deleteSerial(d));
+
+  const url = `${cfg.SITE_URL}/q.html?i=${encodeURIComponent(d.item_number)}&c=${encodeURIComponent(d.code)}`;
+  const canvas = document.getElementById("qrBig");
+  window.QRCode?.toCanvas(canvas, url,
+    { width: 600, margin: 1, errorCorrectionLevel: "H", color: { dark: "#14161A", light: "#ffffff" } },
+    (err) => { if (err) console.error(err); });
+
+  document.getElementById("qrDl").addEventListener("click", () => {
+    const a2 = document.createElement("a");
+    a2.href = canvas.toDataURL("image/png");
+    a2.download = `${d.item_number}.png`;
+    a2.click();
+  });
+}
+
+/* Deleting a serial cuts a real garment loose: its QR stops working for
+   good, and if someone owns it they stop earning from it. Two gates, the
+   second deliberately awkward. Past payouts survive — the ledger keeps its
+   rows and only loses the link. */
+async function deleteSerial(d) {
+  const consequences = d.claimed
+    ? `${d.item_number} is CLAIMED by ${d.owner_email || "someone"}.\n\n` +
+      `  · the QR on that shirt stops working, permanently\n` +
+      `  · its owner earns nothing from it again\n` +
+      `  · credit already paid is kept, but loses its link\n\n`
+    : `${d.item_number} has not been claimed.\n\n` +
+      (d.sold ? `  · it was sold, so a real garment exists carrying this code\n` +
+                `  · whoever receives it will never be able to claim it\n\n` : "");
+
+  if (!confirm(consequences + "There is no undo. Continue?")) return;
+
+  const typed = prompt(`Second check.\n\nType the serial exactly to confirm:\n${d.item_number}`);
+  if (typed === null) return;
+  if (typed.trim().toLowerCase() !== d.item_number.toLowerCase()) {
+    $("codeMsg").innerHTML = `<p class="notice notice-bad">That did not match ${escapeHtml(d.item_number)}. Nothing was deleted.</p>`;
+    document.getElementById("adminModal")?.classList.remove("open");
+    return;
+  }
+
+  const { error } = await sb.from("garment_codes").delete().eq("code", d.code);
+  document.getElementById("adminModal")?.classList.remove("open");
+  if (error) { $("codeMsg").innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
+  await loadCodes();
+  $("codeMsg").innerHTML = `<p class="notice notice-bad">Deleted ${escapeHtml(d.item_number)}. That garment is now unscannable.</p>`;
 }
 
 async function generateCodes() {
   const msg = $("genMsg");
   const sel = $("gProduct");
-  const product_id = sel.value;
   const sku = sel.selectedOptions[0].dataset.sku;
   const count = Math.min(200, Math.max(1, parseInt($("gCount").value || "1", 10)));
   const start = Math.max(1, parseInt($("gStart").value || "1", 10));
@@ -502,13 +557,13 @@ async function generateCodes() {
   const rows = Array.from({ length: count }, (_, k) => ({
     code: newToken(),
     item_number: `${sku}-${String(start + k).padStart(4, "0")}`,
-    product_id,
+    serial_no: start + k,
+    product_id: sel.value,
   }));
 
-  msg.innerHTML = `<p class="notice">Writing ${count} codes…</p>`;
   const { error } = await sb.from("garment_codes").insert(rows);
   if (error) { msg.innerHTML = `<p class="notice notice-bad">${escapeHtml(error.message)}</p>`; return; }
-  msg.innerHTML = `<p class="notice">${count} codes ready. Print the sheet on the right.</p>`;
+  msg.innerHTML = `<p class="notice">${count} issued.</p>`;
   $("gStart").value = start + count;
   loadCodes();
 }
@@ -818,6 +873,60 @@ function paintSettings() {
     }
     await loadSettings();
     $("sMsg").innerHTML = `<p class="notice">Saved.</p>`;
+  });
+}
+
+/* ================= subscribers ================= */
+let SUBS = [];
+
+async function loadSubs() {
+  const { data } = await sb.from("subscribers")
+    .select("email,lang,source,created_at,unsubscribed_at")
+    .order("created_at", { ascending: false });
+  SUBS = data || [];
+  paintSubs();
+}
+
+function paintSubs() {
+  const live = SUBS.filter((x) => !x.unsubscribed_at);
+  const it = live.filter((x) => x.lang === "it").length;
+
+  $("tabSubs").innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <span class="tag tag-ink">Subscribers</span>
+        <span class="tag">${live.length} on the list · ${it} Italian · ${SUBS.length - live.length} left</span>
+        <button class="tab" id="subCsv" style="margin-left:auto">Export CSV</button>
+      </div>
+      <p class="mini" style="color:var(--ink-soft);line-height:1.6">
+        Addresses are collected here but sending happens elsewhere. Export the CSV
+        and import it into whichever mailer you use, and put an unsubscribe link
+        pointing at ${escapeHtml(cfg.SITE_URL)}/unsubscribe.html?t=TOKEN in every send.</p>
+      ${live.length ? `
+      <table class="grid-table">
+        <thead><tr><th>Email</th><th>Language</th><th>From</th><th>Joined</th></tr></thead>
+        <tbody>${SUBS.map((x) => `
+          <tr>
+            <td class="mini ${x.unsubscribed_at ? "sold-out" : ""}">${escapeHtml(x.email)}</td>
+            <td class="mini">${escapeHtml(x.lang)}</td>
+            <td class="mini">${escapeHtml(x.source || "—")}</td>
+            <td class="mini">${new Date(x.created_at).toLocaleDateString(cfg.LOCALE)}</td>
+          </tr>`).join("")}</tbody>
+      </table>` : `<p class="empty">Nobody has signed up yet.</p>`}
+    </div>`;
+
+  $("subCsv")?.addEventListener("click", async () => {
+    // the token is only fetched at export time, never rendered on screen
+    const { data } = await sb.from("subscribers")
+      .select("email,lang,token,created_at").is("unsubscribed_at", null);
+    const rows = [["email", "lang", "unsubscribe_url", "joined"]].concat(
+      (data || []).map((x) => [x.email, x.lang,
+        `${cfg.SITE_URL}/unsubscribe.html?t=${x.token}`, x.created_at]));
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `subscribers-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
   });
 }
 
